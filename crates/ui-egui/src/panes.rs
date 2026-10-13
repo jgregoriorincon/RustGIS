@@ -1184,7 +1184,7 @@ fn geoprocessing(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         if !p.help.is_empty() {
             label.on_hover_text(p.help);
         }
-        let cur = app.gp.values.get(p.name).cloned().unwrap_or_default();
+        let mut cur = app.gp.values.get(p.name).cloned().unwrap_or_default();
         let options: Option<Vec<String>> = match p.kind {
             ParamKind::Layer => Some(layer_names(None)),
             ParamKind::PolygonLayer => Some(layer_names(Some(GeometryType::Polygon))),
@@ -1201,6 +1201,11 @@ fn geoprocessing(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                 let mut v: Vec<String> = ds
                     .map(|d| d.fields.iter().filter(|f| !numeric || f.ty.is_numeric()).map(|f| f.name.clone()).collect())
                     .unwrap_or_default();
+                // A field picked for another layer, which this one doesn't have: unset.
+                if ds.is_some() && !cur.is_empty() && !v.iter().any(|f| f.eq_ignore_ascii_case(&cur)) {
+                    app.gp.values.remove(p.name);
+                    cur.clear();
+                }
                 if !p.required {
                     v.insert(0, String::new());
                 }
