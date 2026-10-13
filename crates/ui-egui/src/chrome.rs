@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use crate::mapview::Toast;
 use crate::theme::{Tokens, regular, semibold};
-use crate::widgets::{small, text_w};
+use crate::widgets::{row_button, small, text_w};
 use crate::{RustGisApp, icons};
 
 pub fn header(app: &mut RustGisApp, ui: &mut Ui) {
@@ -415,13 +415,8 @@ pub fn command_search(app: &mut RustGisApp, ctx: &egui::Context) {
                 if show_loc {
                     b = b.right_text(egui::RichText::new(loc).size(11.0).weak());
                 }
-                // As a menu row: a frameless button's hover fill goes under its text.
-                let under = ui.painter().add(egui::Shape::Noop);
-                let resp = ui.add(b);
-                if resp.hovered() || resp.is_pointer_button_down_on() {
-                    let fill = if resp.is_pointer_button_down_on() { t.pressed } else { t.hover };
-                    ui.painter().set(under, egui::Shape::rect_filled(resp.rect, CornerRadius::same(5), fill));
-                }
+                // The scroll area would clip a fill wider than the row.
+                let resp = row_button(ui, true, b, 0.0);
                 if resp.clicked() || (i == 0 && ui.input(|i| i.key_pressed(Key::Enter))) {
                     chosen = Some(id.clone());
                 }
