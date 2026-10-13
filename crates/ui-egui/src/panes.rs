@@ -211,27 +211,28 @@ fn contents(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                 ui.add_space(12.0);
                 ui.label(egui::RichText::new(tl!("Standalone Tables")).size(11.5).color(t.text_dim));
             });
-            for name in tables {
+            for (at, name) in tables.into_iter().enumerate() {
                 ui.horizontal(|ui| {
                     ui.add_space(30.0);
                     let (r, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
                     icons::paint(ui.painter(), r, "table", t.icon, t.accent);
                     let resp = ui.add(egui::Label::new(egui::RichText::new(&name).size(12.0)).sense(Sense::click()));
-                    if resp.double_clicked() || resp.clicked() {
-                        app.table.standalone = Some(name.clone());
-                        app.session.table_layer = None;
-                    }
+                    let mut open = resp.double_clicked() || resp.clicked();
                     resp.context_menu(|ui| {
                         if ui.button(tl!("Attribute Table")).clicked() {
-                            app.table.standalone = Some(name.clone());
-                            app.session.table_layer = None;
+                            open = true;
                             ui.close();
                         }
+                        // Names can repeat: the row's position says which table.
                         if ui.button(tl!("Remove")).clicked() {
-                            let _ = app.run("table.remove", json!({"table": name}));
+                            let _ = app.run("table.remove", json!({"table": name, "at": at}));
                             ui.close();
                         }
                     });
+                    if open {
+                        app.table.standalone = Some(name.clone());
+                        app.session.table_layer = None;
+                    }
                 });
             }
         }

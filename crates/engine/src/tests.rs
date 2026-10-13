@@ -107,6 +107,15 @@ fn table_remove_takes_a_standalone_table_out_of_the_project() {
     assert_eq!((names(&s), s.undo_depth()), (vec!["notes".to_string()], depth + 1));
     s.run("edit.undo", &Value::Null).unwrap();
     assert_eq!(names(&s), ["sites", "notes"]);
+    // Two tables of one name: `at` says which. A position that holds another table, or none, fails.
+    s.run("layer.addDataText", &json!({"fileName": "notes.csv", "text": "id,city\n1,Paris\n"})).unwrap();
+    assert_eq!(names(&s), ["sites", "notes", "notes"]);
+    for at in [json!(0), json!(3), json!(-1), json!(1.5), json!("2")] {
+        assert!(s.run("table.remove", &json!({"table": "notes", "at": at})).is_err(), "{at}");
+    }
+    s.run("table.remove", &json!({"table": "notes", "at": 2})).unwrap();
+    assert_eq!(names(&s), ["sites", "notes"]);
+    assert!(s.project.tables.get(1).is_some_and(|t| t.field_index("street").is_some()), "the first of the two stays");
 }
 
 #[test]

@@ -230,11 +230,19 @@ pub fn commands() -> Vec<C> {
         .view(),
         C::new("table.remove", "Remove Table", "Data › Table", |s, p| {
             let name = ps(p, "table").ok_or("give the table's name (\"table\")")?;
-            let i = s.project.tables.iter().position(|t| t.name == name).ok_or_else(|| format!("no standalone table named '{name}'"))?;
+            // Tables can share a name: `at` says which of them is meant, else it is the first.
+            let i = match p.get("at").filter(|v| !v.is_null()) {
+                Some(v) => v
+                    .as_u64()
+                    .and_then(|i| usize::try_from(i).ok())
+                    .filter(|&i| s.project.tables.get(i).is_some_and(|t| t.name == name))
+                    .ok_or_else(|| format!("the standalone table at that position isn't '{name}'"))?,
+                None => s.project.tables.iter().position(|t| t.name == name).ok_or_else(|| format!("no standalone table named '{name}'"))?,
+            };
             s.project.tables.remove(i);
             Ok(Value::Null)
         })
-        .params(r#"{"table": "a standalone table's name"}"#),
+        .params(r#"{"table": "a standalone table's name", "at": "optionally its position among the standalone tables (0 = first), when names repeat"}"#),
         C::new("layer.fields", "Fields", "Data › Data Design", |s, p| {
             let id = s.layer_id(p)?;
             let l = s.map().layer(id).ok_or("no layer")?;
