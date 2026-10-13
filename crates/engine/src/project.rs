@@ -31,7 +31,8 @@ pub struct Project {
     pub active_map: usize,
     #[serde(default)]
     pub tables: Vec<Table>,
-    /// The id the next standalone table gets: removing a table doesn't free its id.
+    /// The id the next standalone table gets: removing a table, or undoing its addition, doesn't
+    /// free its id.
     #[serde(default)]
     next_table_id: u32,
     #[serde(default)]
@@ -277,6 +278,12 @@ impl Project {
         id
     }
 
+    /// Keeps the ids given in another state of the project from being given again in this one,
+    /// which takes its place (undo, redo): the counter never goes back.
+    pub(crate) fn keep_table_ids(&mut self, other: &Project) {
+        self.next_table_id = self.next_table_id.max(other.next_table_id);
+    }
+
     /// Adds a standalone table, and returns the id it got.
     pub fn add_table(&mut self, dataset: Dataset) -> u32 {
         let id = self.new_table_id();
@@ -305,10 +312,12 @@ impl Project {
             self.active_map = 0;
         }
         // Tables from before they had ids (0), or with an id repeated by a hand edit, get new
-        // ones; the others keep theirs, which commands and views may hold.
+        // ones; the others keep theirs, which commands and views may hold. The new ones come
+        // after every id given so far, so none is that of a table removed earlier.
         let mut ids = std::collections::HashSet::new();
         let stale: Vec<usize> = self.tables.iter().enumerate().filter(|(_, t)| t.id == 0 || !ids.insert(t.id)).map(|(i, _)| i).collect();
-        let mut next = 1u32;
+        let top = self.tables.iter().map(|t| t.id).max().unwrap_or(0);
+        let mut next = self.next_table_id.max(top.wrapping_add(1)).max(1);
         for i in stale {
             while !ids.insert(next) {
                 next = next.wrapping_add(1).max(1);

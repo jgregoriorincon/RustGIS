@@ -560,6 +560,7 @@ impl Session {
     pub(crate) fn undo(&mut self) -> bool {
         let Some((p, label)) = self.undo.pop() else { return false };
         let cur = std::mem::replace(&mut self.project, p);
+        self.project.keep_table_ids(&cur);
         self.redo.push((cur, label));
         self.touch_all_geometry();
         true
@@ -568,6 +569,7 @@ impl Session {
     pub(crate) fn redo(&mut self) -> bool {
         let Some((p, label)) = self.redo.pop() else { return false };
         let cur = std::mem::replace(&mut self.project, p);
+        self.project.keep_table_ids(&cur);
         self.undo.push((cur, label));
         self.touch_all_geometry();
         true

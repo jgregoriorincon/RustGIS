@@ -127,6 +127,11 @@ fn table_remove_takes_a_standalone_table_out_of_the_project() {
     assert_eq!(s.project.tables.iter().map(|t| t.id).collect::<Vec<_>>(), [ids[0], ids[1]]);
     s.run("edit.redo", &Value::Null).unwrap();
     assert_eq!(s.project.tables.iter().map(|t| t.id).collect::<Vec<_>>(), [ids[0]]);
+    // A table added and undone leaves its id unused: the next table gets another.
+    let undone = s.run("layer.addDataText", &json!({"fileName": "a.csv", "text": "id,city\n1,Paris\n"})).unwrap();
+    s.run("edit.undo", &Value::Null).unwrap();
+    let next = s.run("layer.addDataText", &json!({"fileName": "b.csv", "text": "id,city\n1,Paris\n"})).unwrap();
+    assert!(undone["id"].as_u64() < next["id"].as_u64(), "{undone} then {next}");
 }
 
 #[test]
@@ -158,7 +163,7 @@ fn standalone_tables_keep_their_ids_in_the_project_file() {
     v["tables"][0]["id"] = json!(7);
     v["tables"][1]["id"] = json!(7);
     let edited = Project::from_json(&v.to_string()).unwrap();
-    assert_eq!(edited.tables.iter().map(|t| t.id).collect::<Vec<_>>(), [7, 1]);
+    assert_eq!(edited.tables.iter().map(|t| t.id).collect::<Vec<_>>(), [7, 8]);
     // A tool's table put again under its name keeps the id.
     let stats = json!({"tool": "summaryStatistics", "params": {"input": "Countries", "field": "pop_est", "case": "continent"}});
     s.run("gp.run", &stats).unwrap();
