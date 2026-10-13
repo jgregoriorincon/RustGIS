@@ -227,7 +227,13 @@ fn contents(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                         }
                         // Names can repeat: the row's position says which table.
                         if ui.button(tl!("Remove")).clicked() {
-                            let _ = app.run("table.remove", json!({"table": name, "at": at}));
+                            // The table view shows the first table of a name: it closes with that one,
+                            // rather than turn to another table of the name.
+                            let shown = app.table.standalone.as_deref() == Some(name.as_str())
+                                && app.session.project.tables.iter().position(|t| t.name == name) == Some(at);
+                            if app.run("table.remove", json!({"table": name, "at": at})).is_ok() && shown {
+                                app.table.standalone = None;
+                            }
                             ui.close();
                         }
                     });
