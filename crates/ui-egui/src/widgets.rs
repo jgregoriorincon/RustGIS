@@ -200,9 +200,15 @@ pub fn menu_item(ui: &mut Ui, app: &mut RustGisApp, icon: &str, label: &str, id:
     if !shortcut.is_empty() {
         button = button.right_text(shortcut);
     }
+    // A frameless button paints nothing behind its text: the row's hover fill goes under it.
+    let under = ui.painter().add(egui::Shape::Noop);
     let resp = ui.add_enabled(on, button);
+    let t = Tokens::get(ui.ctx());
+    if on && (resp.hovered() || resp.is_pointer_button_down_on()) {
+        let fill = if resp.is_pointer_button_down_on() { t.pressed } else { t.hover };
+        ui.painter().set(under, egui::Shape::rect_filled(resp.rect.expand2(vec2(4.0, 0.0)), CornerRadius::same(5), fill));
+    }
     if !icon.is_empty() {
-        let t = Tokens::get(ui.ctx());
         icons::paint(
             ui.painter(),
             Rect::from_center_size(
