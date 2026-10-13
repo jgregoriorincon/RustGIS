@@ -228,6 +228,13 @@ pub fn commands() -> Vec<C> {
             Ok(Value::Null)
         })
         .view(),
+        C::new("table.remove", "Remove Table", "Data › Table", |s, p| {
+            let name = ps(p, "table").ok_or("give the table's name (\"table\")")?;
+            let i = s.project.tables.iter().position(|t| t.name == name).ok_or_else(|| format!("no standalone table named '{name}'"))?;
+            s.project.tables.remove(i);
+            Ok(Value::Null)
+        })
+        .params(r#"{"table": "a standalone table's name"}"#),
         C::new("layer.fields", "Fields", "Data › Data Design", |s, p| {
             let id = s.layer_id(p)?;
             let l = s.map().layer(id).ok_or("no layer")?;
