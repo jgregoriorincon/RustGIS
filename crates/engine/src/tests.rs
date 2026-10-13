@@ -171,7 +171,8 @@ fn standalone_tables_keep_their_ids_in_the_project_file() {
         s.run("layer.addDataText", &json!({"fileName": "counts.csv", "text": format!("k,v\na,{v}\n")})).unwrap();
     }
     let info = s.run("info.project", &Value::Null).unwrap();
-    let counts: Vec<u64> = info["tables"].as_array().unwrap().iter().filter(|t| t["name"] == "counts").filter_map(|t| t["id"].as_u64()).collect();
+    let counts: Vec<u64> =
+        info["tables"].as_array().unwrap().iter().filter(|t| t["name"] == "counts").filter_map(|t| t["id"].as_u64()).collect();
     assert_eq!((counts.len(), info["tables"][0]["rows"].as_u64()), (2, Some(1)), "{info}");
     for (input, sum) in [(json!("counts"), 10.0), (json!("COUNTS"), 10.0), (json!(counts[1].to_string()), 99.0)] {
         s.run("gp.run", &json!({"tool": "summaryStatistics", "params": {"input": input, "field": "v"}})).unwrap();
