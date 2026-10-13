@@ -165,6 +165,26 @@ fn standalone_tables_keep_their_ids_in_the_project_file() {
     let id = s.project.tables.last().map(|t| t.id).unwrap();
     s.run("gp.run", &stats).unwrap();
     assert_eq!((s.project.tables.len(), s.project.tables.last().map(|t| t.id)), (3, Some(id)));
+    // Commands and tools reach a table by its id as well as by its name, which is the first of
+    // two tables sharing it.
+    for v in [10, 99] {
+        s.run("layer.addDataText", &json!({"fileName": "counts.csv", "text": format!("k,v\na,{v}\n")})).unwrap();
+    }
+    let info = s.run("info.project", &Value::Null).unwrap();
+    let counts: Vec<u64> = info["tables"].as_array().unwrap().iter().filter(|t| t["name"] == "counts").filter_map(|t| t["id"].as_u64()).collect();
+    assert_eq!((counts.len(), info["tables"][0]["rows"].as_u64()), (2, Some(1)), "{info}");
+    for (input, sum) in [(json!("counts"), 10.0), (json!("COUNTS"), 10.0), (json!(counts[1].to_string()), 99.0)] {
+        s.run("gp.run", &json!({"tool": "summaryStatistics", "params": {"input": input, "field": "v"}})).unwrap();
+        let out = s.project.tables.iter().find(|t| t.name == "counts_Statistics").unwrap();
+        assert_eq!(out.value(0, out.field_index("SUM_v").unwrap()), &rustgis_data::Value::Float(sum), "{input}");
+    }
+    let dir = std::env::temp_dir().join(format!("rustgis-table-ids-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("counts.csv");
+    s.run("share.exportTable", &json!({"table": counts[1], "path": path})).unwrap();
+    assert!(std::fs::read_to_string(&path).unwrap().contains("99"));
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(s.run("share.exportTable", &json!({"table": 9999, "path": path})).is_err());
     // The table the attribute table shows is forgotten with the table, and with the project.
     s.table_standalone = Some(id);
     s.run("table.remove", &json!({"table": ids[0]})).unwrap();

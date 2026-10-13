@@ -34,7 +34,9 @@ Text…** picks a CSV's x and y (or WKT) columns, their coordinate system (such 
 the separator; Add Data finds them itself (columns named like longitude/latitude,
 easting/northing or geometry, and EWKT's `SRID=`) and says when coordinates aren't
 longitude/latitude. A CSV without coordinate columns, or a layer without geometry, opens as a
-standalone table, listed under the map in Layers; right-click it to open or remove it. **Home › Add Data ›
+standalone table, listed under the map in Layers; right-click it to open or remove it. Tables
+can share a name: commands and tools take a table's id (`info.project` lists them) as well as its
+name, which stands for the first table of that name. **Home › Add Data ›
 Graphics Layer** adds a layer for [drawn graphics](cartography.md#graphics), and **Insert ›
 Layer Templates** adds empty layers with ready-made schemas to draw into.
 

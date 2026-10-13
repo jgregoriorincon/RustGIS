@@ -9,7 +9,7 @@ use crate::{CmdResult, CommandSpec as C, GpRecord, Session};
 
 pub fn commands() -> Vec<C> {
     vec![
-        C::new("gp.run", "Run Tool", "Analyze › Geoprocessing", run).when(need_layers).params(r#"{"tool": tool id, "params": {...}}"#),
+        C::new("gp.run", "Run Tool", "Analyze › Geoprocessing", run).when(need_layers).params(r#"{"tool": tool id, "params": {...} (a layer by name; a standalone table by name or id)}"#),
         C::new("gp.tools", "Tools", "Analyze › Geoprocessing", |_, _| {
             Ok(Value::Array(
                 rustgis_analysis::tools()
@@ -327,6 +327,8 @@ impl Inputs for MapInputs<'_> {
             .get(&layer.to_ascii_lowercase())
             .or_else(|| self.0.layer_by_name(layer).map(|l| &l.dataset))
             .or_else(|| self.1.iter().find(|t| t.name.eq_ignore_ascii_case(layer)).map(|t| &t.dataset))
+            // Tables can share a name: one is also found by its id, when nothing has that for a name.
+            .or_else(|| layer.trim().parse::<u32>().ok().and_then(|id| self.1.iter().find(|t| t.id == id)).map(|t| &t.dataset))
     }
     fn selection(&self, layer: &str) -> &[usize] {
         match self.0.layer_by_name(layer) {

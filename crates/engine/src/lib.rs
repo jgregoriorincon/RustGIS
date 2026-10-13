@@ -712,7 +712,8 @@ impl Session {
     }
 
     /// Resolves a `table` parameter to a standalone table's position in the project: by its id,
-    /// or by its name (the first table of that name, since names can repeat).
+    /// or by its name (the first table of that name, since names can repeat; ignoring case when
+    /// none has it exactly).
     pub fn table_index(&self, p: &Value) -> Result<usize, String> {
         let tables = &self.project.tables;
         let by_id = |id: u64| tables.iter().position(|t| u64::from(t.id) == id);
@@ -721,6 +722,7 @@ impl Session {
             Some(Value::String(s)) => tables
                 .iter()
                 .position(|t| t.name == *s)
+                .or_else(|| tables.iter().position(|t| t.name.eq_ignore_ascii_case(s)))
                 .or_else(|| s.parse::<u64>().ok().and_then(by_id))
                 .ok_or_else(|| format!("no standalone table named '{s}'")),
             _ => Err("give the table's name or id (\"table\")".to_string()),
