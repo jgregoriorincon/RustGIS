@@ -326,9 +326,8 @@ impl Inputs for MapInputs<'_> {
         self.3
             .get(&layer.to_ascii_lowercase())
             .or_else(|| self.0.layer_by_name(layer).map(|l| &l.dataset))
-            .or_else(|| self.1.iter().find(|t| t.name.eq_ignore_ascii_case(layer)).map(|t| &t.dataset))
-            // Tables can share a name: one is also found by its id, when nothing has that for a name.
-            .or_else(|| layer.trim().parse::<u32>().ok().and_then(|id| self.1.iter().find(|t| t.id == id)).map(|t| &t.dataset))
+            // A table as commands find one: by its name, else (names can repeat) by its id.
+            .or_else(|| crate::project::find_table(self.1, layer).and_then(|i| self.1.get(i)).map(|t| &t.dataset))
     }
     fn selection(&self, layer: &str) -> &[usize] {
         match self.0.layer_by_name(layer) {

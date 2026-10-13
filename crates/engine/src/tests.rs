@@ -115,6 +115,9 @@ fn table_remove_takes_a_standalone_table_out_of_the_project() {
     for table in [json!(0), json!(9999), json!(-1), json!(1.5), json!("9999")] {
         assert!(s.run("table.remove", &json!({"table": table})).is_err(), "{table}");
     }
+    // The position the command took before ids is refused, not ignored.
+    assert!(s.run("table.remove", &json!({"table": "notes", "at": 2})).is_err());
+    assert_eq!(names(&s), ["sites", "notes", "notes"]);
     s.run("table.remove", &json!({"table": ids[2]})).unwrap();
     assert_eq!(s.project.tables.iter().map(|t| t.id).collect::<Vec<_>>(), [ids[0], ids[1]]);
     assert!(s.project.table(ids[1]).is_some_and(|t| t.field_index("street").is_some()), "the first of the two stays");
@@ -179,9 +182,14 @@ fn standalone_tables_keep_their_ids_in_the_project_file() {
     let counts: Vec<u64> =
         info["tables"].as_array().unwrap().iter().filter(|t| t["name"] == "counts").filter_map(|t| t["id"].as_u64()).collect();
     assert_eq!((counts.len(), info["tables"][0]["rows"].as_u64()), (2, Some(1)), "{info}");
-    for (input, sum) in [(json!("counts"), 10.0), (json!("COUNTS"), 10.0), (json!(counts[1].to_string()), 99.0)] {
+    // A name exactly as written comes before one that differs in case, for tools as for commands.
+    s.run("layer.addDataText", &json!({"fileName": "Counts.csv", "text": "k,v\na,5\n"})).unwrap();
+    let upper = s.project.tables.last().map(|t| t.id).unwrap();
+    assert_eq!(s.table_index(&json!({"table": "Counts"})).ok().and_then(|i| s.project.tables.get(i)).map(|t| t.id), Some(upper));
+    for (input, sum) in [(json!("counts"), 10.0), (json!("COUNTS"), 10.0), (json!("Counts"), 5.0), (json!(counts[1].to_string()), 99.0)] {
         s.run("gp.run", &json!({"tool": "summaryStatistics", "params": {"input": input, "field": "v"}})).unwrap();
-        let out = s.project.tables.iter().find(|t| t.name == "counts_Statistics").unwrap();
+        // The run's table is the last: put again under its name, or added.
+        let out = s.project.tables.last().unwrap();
         assert_eq!(out.value(0, out.field_index("SUM_v").unwrap()), &rustgis_data::Value::Float(sum), "{input}");
     }
     let dir = std::env::temp_dir().join(format!("rustgis-table-ids-{}", std::process::id()));

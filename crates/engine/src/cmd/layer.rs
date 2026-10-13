@@ -229,6 +229,11 @@ pub fn commands() -> Vec<C> {
         })
         .view(),
         C::new("table.remove", "Remove Table", "Data › Table", |s, p| {
+            // The position this command took before tables had ids: refused, rather than
+            // removing the first table of the name where another was meant.
+            if p.get("at").is_some_and(|at| !at.is_null()) {
+                return Err("\"at\" is no longer read: give the table's id as \"table\" (info.project lists the ids)".into());
+            }
             let i = s.table_index(p)?;
             s.project.tables.remove(i);
             Ok(Value::Null)

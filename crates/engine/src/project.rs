@@ -120,6 +120,17 @@ impl From<TableFile> for Table {
     }
 }
 
+/// The table a name or an id written as text stands for, as its position among `tables`: the
+/// first of that name (names can repeat), else the first of that name ignoring case, else the
+/// one of that id. The one rule commands and tools find a table by.
+pub fn find_table(tables: &[Table], text: &str) -> Option<usize> {
+    tables
+        .iter()
+        .position(|t| t.name == text)
+        .or_else(|| tables.iter().position(|t| t.name.eq_ignore_ascii_case(text)))
+        .or_else(|| text.trim().parse::<u32>().ok().and_then(|id| tables.iter().position(|t| t.id == id)))
+}
+
 impl std::ops::Deref for Table {
     type Target = Dataset;
     fn deref(&self) -> &Dataset {
