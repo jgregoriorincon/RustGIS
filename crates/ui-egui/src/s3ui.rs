@@ -179,6 +179,19 @@ fn store_saved(app: &RustGisApp) {
     }
 }
 
+/// Opens the S3 browser on a session connection (the Data Sources pane's S3 list).
+pub fn open_connection(app: &mut RustGisApp, name: &str) {
+    let st = &mut app.ui.s3;
+    if st.conn != name {
+        st.conn = name.to_string();
+        st.bucket.clear();
+        st.prefix.clear();
+        st.listing = None;
+        st.buckets.clear();
+        st.error = None;
+    }
+}
+
 /// The dialog: a connection, then a bucket browsed a level at a time.
 pub fn dialog(app: &mut RustGisApp, ui: &mut egui::Ui) {
     load_saved(app);
