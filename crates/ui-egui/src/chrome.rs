@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use crate::mapview::Toast;
 use crate::theme::{Tokens, regular, semibold};
-use crate::widgets::{small, text_w};
+use crate::widgets::{row_button, small, text_w};
 use crate::{RustGisApp, icons};
 
 pub fn header(app: &mut RustGisApp, ui: &mut Ui) {
@@ -415,7 +415,8 @@ pub fn command_search(app: &mut RustGisApp, ctx: &egui::Context) {
                 if show_loc {
                     b = b.right_text(egui::RichText::new(loc).size(11.0).weak());
                 }
-                let resp = ui.add(b);
+                // The scroll area would clip a fill wider than the row.
+                let resp = row_button(ui, true, b, 0.0);
                 if resp.clicked() || (i == 0 && ui.input(|i| i.key_pressed(Key::Enter))) {
                     chosen = Some(id.clone());
                 }

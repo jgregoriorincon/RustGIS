@@ -476,6 +476,8 @@ fn hostile_params_never_panic() {
                 | "stac.search"
                 // Asks geoBoundaries for its list.
                 | "boundaries.countries"
+                // Asks Source Cooperative for its featured products.
+                | "sourcecoop.products"
         ) {
             continue;
         }
@@ -4098,4 +4100,68 @@ fn dxf_drawings_by_path_and_upload() {
     assert!(u.notices.iter().any(|n| n.text.contains("doesn't say its coordinate system")), "{:?}", u.notices);
     assert!(u.run("layer.addDataBytes", &json!({"fileName": "bad.dxf", "data": "AAAA"})).is_err());
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Overture and Source Cooperative refuse what they can't read before asking anything of the
+/// network (their answers are read by the catalog modules' own tests).
+#[test]
+fn catalog_commands_refuse_bad_parameters() {
+    let mut s = Session::new(Project::default());
+    for bad in [
+        json!({}),
+        json!({"theme": "roads"}),
+        json!({"theme": "buildings", "type": "segment"}),
+        json!({"theme": "buildings", "release": "../x"}),
+        json!({"theme": "buildings", "bbox": [1, 2, 3]}),
+        json!({"theme": "buildings", "bbox": [10, 50, 0, 40]}),
+        json!({"theme": "buildings", "bbox": "everywhere"}),
+    ] {
+        assert!(s.run("overture.add", &bad).is_err(), "{bad}");
+    }
+    for bad in [
+        json!({}),
+        json!({"account": "giswqs"}),
+        json!({"account": "../etc", "product": "p"}),
+        json!({"account": "a", "product": "p", "path": "../../x/"}),
+    ] {
+        assert!(s.run("sourcecoop.list", &bad).is_err(), "{bad}");
+    }
+    assert!(s.run("sourcecoop.products", &json!({"account": "a/b"})).is_err());
+    assert!(s.map().layers.is_empty() && s.map().tiles.is_empty());
+}
+
+/// Overture's files are added all or none: one that can't be read takes the ones added before it
+/// out again, so trying again doesn't add them twice.
+#[test]
+fn overture_files_are_added_all_or_none() {
+    use rustgis_data::{Dataset, Feature, Field, FieldType, Geometry, GeometryType, Value};
+    let mut ds = Dataset::new("b", GeometryType::Point, vec![Field::new("n", FieldType::Integer)]);
+    for i in 0..50u32 {
+        let c = rustgis_geom::Coord::new(7.0 + 0.01 * f64::from(i), 46.0);
+        ds.features.push(Feature { id: u64::from(i) + 1, geometry: Some(Geometry::Point(c)), attrs: vec![Value::Int(i64::from(i))] });
+    }
+    let (good, _) = serve_ranges(rustgis_data::source::fgb::write(&ds).unwrap());
+    let (bad, _) = serve_ranges(b"not a flatgeobuf at all".to_vec());
+    let mut s = Session::new(Project::default());
+    let before = s.map().layers.len();
+    let urls = vec![format!("{good}/part-0.fgb"), format!("{bad}/part-1.fgb")];
+    let e = crate::cmd::catalogs::add_files(&mut s, "building", &urls).unwrap_err();
+    assert!(e.contains("none of the 2 files was added"), "{e}");
+    assert_eq!(s.map().layers.len(), before, "the first file's layer was taken out again");
+    // The app's way (the files found and opened already) takes Overture's own files only: any
+    // other address is refused before anything is read.
+    let files = json!([format!("{good}/part-0.fgb"), format!("{bad}/part-1.fgb")]);
+    let e = s.run("overture.add", &json!({"theme": "buildings", "files": files})).unwrap_err();
+    assert!(e.contains("not one of Overture's release files"), "{e}");
+    assert_eq!(s.map().layers.len(), before);
+    for bad_files in [json!([]), json!("x"), json!(["https://x.org/a.png"]), json!(vec![format!("{good}/a.fgb"); 7])] {
+        assert!(s.run("overture.add", &json!({"theme": "buildings", "files": bad_files})).is_err(), "{bad_files}");
+    }
+    assert_eq!(s.map().layers.len(), before);
+    // Both readable: both added, numbered.
+    let urls = vec![format!("{good}/part-0.fgb"), format!("{good}/part-1.fgb")];
+    let r = crate::cmd::catalogs::add_files(&mut s, "building", &urls).unwrap();
+    assert_eq!(r["files"], 2);
+    let names: Vec<&str> = s.map().layers.iter().map(|l| l.name.as_str()).collect();
+    assert!(names.contains(&"Overture building (1/2)") && names.contains(&"Overture building (2/2)"), "{names:?}");
 }
