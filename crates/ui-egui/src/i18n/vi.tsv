@@ -383,6 +383,7 @@ Create Polygon	Tạo vùng
 Create Profile	Tạo mặt cắt
 Create Thumbnail	Tạo ảnh thu nhỏ
 Creates a point inside each input feature.	Tạo một điểm bên trong mỗi đối tượng đầu vào.
+Creates points from a table's x and y coordinate fields.	Tạo các điểm từ các trường tọa độ x và y của một bảng.
 Creates polygons around input features at a given distance.	Tạo các vùng bao quanh đối tượng đầu vào theo khoảng cách cho trước.
 Cross Section	Mặt cắt ngang
 Cross Section (2 clicks)	Mặt cắt ngang (2 lần nhấp)
@@ -1813,7 +1814,10 @@ World, equal-area: true sizes, shapes bend towards the edges.	Thế giới, đ�
 Worldview	Biên giới
 Write a plugin	Viết plugin
 X (mm)	X (mm)
+X Field	Trường X
+XY Table To Point	Bảng XY thành điểm
 Y (mm)	Y (mm)
+Y Field	Trường Y
 Yes	Có
 You have version {version}.	Bạn đang dùng phiên bản {version}.
 z (m)	z (m)

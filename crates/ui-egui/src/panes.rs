@@ -1201,17 +1201,21 @@ fn geoprocessing(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
             ParamKind::Layer => Some(layer_names(None)),
             ParamKind::PolygonLayer => Some(layer_names(Some(GeometryType::Polygon))),
             ParamKind::PointLayer => Some(layer_names(Some(GeometryType::Point))),
-            ParamKind::Field | ParamKind::NumericField => {
+            ParamKind::Field | ParamKind::NumericField | ParamKind::CoordinateField => {
                 let lname = first_layer.and_then(|n| app.gp.values.get(n)).cloned().unwrap_or_default();
-                let numeric = p.kind == ParamKind::NumericField;
                 let ds = app
                     .session
                     .map()
                     .layer_by_name(&lname)
                     .map(|l| &l.dataset)
                     .or_else(|| app.session.project.tables.iter().find(|t| t.name == lname).map(|t| &t.dataset));
+                let offered = |d: &rustgis_engine::data::Dataset, i: usize, f: &rustgis_engine::data::Field| match p.kind {
+                    ParamKind::NumericField => f.ty.is_numeric(),
+                    ParamKind::CoordinateField => rustgis_engine::analysis::holds_coordinates(d, i),
+                    _ => true,
+                };
                 let mut v: Vec<String> = ds
-                    .map(|d| d.fields.iter().filter(|f| !numeric || f.ty.is_numeric()).map(|f| f.name.clone()).collect())
+                    .map(|d| d.fields.iter().enumerate().filter(|(i, f)| offered(d, *i, f)).map(|(_, f)| f.name.clone()).collect())
                     .unwrap_or_default();
                 // A field picked for another layer, which this one doesn't have: unset.
                 if ds.is_some() && !cur.is_empty() && !v.iter().any(|f| f.eq_ignore_ascii_case(&cur)) {

@@ -383,6 +383,7 @@ Create Polygon	폴리곤 만들기
 Create Profile	단면도 만들기
 Create Thumbnail	썸네일 만들기
 Creates a point inside each input feature.	각 입력 피처 내부에 포인트를 생성합니다.
+Creates points from a table's x and y coordinate fields.	테이블의 x, y 좌표 필드에서 포인트를 생성합니다.
 Creates polygons around input features at a given distance.	입력 피처 주위에 지정한 거리의 폴리곤을 생성합니다.
 Cross Section	횡단면
 Cross Section (2 clicks)	횡단면(2회 클릭)
@@ -1813,7 +1814,10 @@ World, equal-area: true sizes, shapes bend towards the edges.	세계, 정적: �
 Worldview	국경
 Write a plugin	플러그인 만들기
 X (mm)	X(mm)
+X Field	X 필드
+XY Table To Point	XY 테이블을 포인트로
 Y (mm)	Y(mm)
+Y Field	Y 필드
 Yes	예
 You have version {version}.	현재 버전은 {version}입니다.
 z (m)	z(m)

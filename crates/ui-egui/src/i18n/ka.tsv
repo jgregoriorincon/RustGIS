@@ -383,6 +383,7 @@ Create Polygon	პოლიგონის შექმნა
 Create Profile	პროფილის შექმნა
 Create Thumbnail	მინიატურის შექმნა
 Creates a point inside each input feature.	თითოეულ შემავალ ობიექტში წერტილის შექმნა.
+Creates points from a table's x and y coordinate fields.	წერტილების შექმნა ცხრილის x და y კოორდინატების ველებიდან.
 Creates polygons around input features at a given distance.	შემავალი ობიექტების გარშემო პოლიგონების შექმნა მოცემულ მანძილზე.
 Cross Section	განივი ჭრილი
 Cross Section (2 clicks)	განივი ჭრილი (2 დაწკაპუნება)
@@ -1813,7 +1814,10 @@ World, equal-area: true sizes, shapes bend towards the edges.	მსოფლი
 Worldview	მსოფლიო ხედვა
 Write a plugin	დანამატის დაწერა
 X (mm)	X (მმ)
+X Field	X ველი
+XY Table To Point	XY ცხრილი წერტილებად
 Y (mm)	Y (მმ)
+Y Field	Y ველი
 Yes	დიახ
 You have version {version}.	თქვენ გაქვთ ვერსია {version}.
 z (m)	z (მ)

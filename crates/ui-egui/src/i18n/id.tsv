@@ -383,6 +383,7 @@ Create Polygon	Buat Poligon
 Create Profile	Buat Profil
 Create Thumbnail	Buat Thumbnail
 Creates a point inside each input feature.	Membuat titik di dalam setiap fitur masukan.
+Creates points from a table's x and y coordinate fields.	Membuat titik dari kolom koordinat x dan y sebuah tabel.
 Creates polygons around input features at a given distance.	Membuat poligon di sekitar fitur masukan pada jarak tertentu.
 Cross Section	Penampang Melintang
 Cross Section (2 clicks)	Penampang Melintang (2 klik)
@@ -1813,7 +1814,10 @@ World, equal-area: true sizes, shapes bend towards the edges.	Dunia, luas sama: 
 Worldview	Batas Negara
 Write a plugin	Tulis plugin
 X (mm)	X (mm)
+X Field	Kolom X
+XY Table To Point	Tabel XY ke Titik
 Y (mm)	Y (mm)
+Y Field	Kolom Y
 Yes	Ya
 You have version {version}.	Anda memiliki versi {version}.
 z (m)	z (m)

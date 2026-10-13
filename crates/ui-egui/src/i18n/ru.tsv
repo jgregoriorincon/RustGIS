@@ -383,6 +383,7 @@ Create Polygon	Создать полигон
 Create Profile	Создать профиль
 Create Thumbnail	Создать эскиз
 Creates a point inside each input feature.	Создаёт точку внутри каждого входного объекта.
+Creates points from a table's x and y coordinate fields.	Создаёт точки по полям координат x и y таблицы.
 Creates polygons around input features at a given distance.	Создаёт полигоны вокруг входных объектов на заданном расстоянии.
 Cross Section	Поперечный разрез
 Cross Section (2 clicks)	Поперечный разрез (2 щелчка)
@@ -1813,7 +1814,10 @@ World, equal-area: true sizes, shapes bend towards the edges.	Мир, равно
 Worldview	Границы
 Write a plugin	Написать модуль
 X (mm)	X (мм)
+X Field	Поле X
+XY Table To Point	Таблица XY в точки
 Y (mm)	Y (мм)
+Y Field	Поле Y
 Yes	Да
 You have version {version}.	У вас версия {version}.
 z (m)	z (м)

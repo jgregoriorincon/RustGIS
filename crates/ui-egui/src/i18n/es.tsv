@@ -383,6 +383,7 @@ Create Polygon	Crear polígono
 Create Profile	Crear perfil
 Create Thumbnail	Crear miniatura
 Creates a point inside each input feature.	Crea un punto dentro de cada entidad de entrada.
+Creates points from a table's x and y coordinate fields.	Crea puntos a partir de los campos de coordenadas x e y de una tabla.
 Creates polygons around input features at a given distance.	Crea polígonos alrededor de las entidades de entrada a una distancia dada.
 Cross Section	Sección transversal
 Cross Section (2 clicks)	Sección transversal (2 clics)
@@ -1813,7 +1814,10 @@ World, equal-area: true sizes, shapes bend towards the edges.	Mundo, de áreas i
 Worldview	Fronteras
 Write a plugin	Escribir un complemento
 X (mm)	X (mm)
+X Field	Campo X
+XY Table To Point	Tabla XY a punto
 Y (mm)	Y (mm)
+Y Field	Campo Y
 Yes	Sí
 You have version {version}.	Tiene la versión {version}.
 z (m)	z (m)

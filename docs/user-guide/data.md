@@ -37,7 +37,9 @@ easting/northing or geometry, and EWKT's `SRID=`) and says when coordinates aren
 longitude/latitude. A CSV without coordinate columns, or a layer without geometry, opens as a
 standalone table, listed under the map in Layers; right-click it to open or remove it. Tables
 can share a name: commands and tools take a table's id (`info.project` lists them) as well as its
-name, which stands for the first table of that name. **Home › Add Data ›
+name, which stands for the first table of that name. The **XY Table To Point** tool
+([Geoprocessing](analysis.md)) makes points of a table already in the project, from two fields of
+coordinates (a decimal comma is read too) and their coordinate system. **Home › Add Data ›
 Graphics Layer** adds a layer for [drawn graphics](cartography.md#graphics), and **Insert ›
 Layer Templates** adds empty layers with ready-made schemas to draw into.
 

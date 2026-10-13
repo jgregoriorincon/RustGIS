@@ -32,7 +32,7 @@ result is added to the map, and the run is listed under **Analyze › History**.
 | Buffer | Analysis › Proximity |
 | Clip, Erase | Analysis › Extract / Overlay |
 | Dissolve | Data Management › Generalization |
-| Minimum Bounding Geometry, Feature To Point, Calculate Geometry Attributes | Data Management › Features |
+| Minimum Bounding Geometry, Feature To Point, XY Table To Point, Calculate Geometry Attributes | Data Management › Features |
 | Simplify | Cartography › Generalization |
 | Select Layer By Location / Attribute | Data Management › Layers and Table Views |
 | Summarize Within, Summary Statistics | Analysis › Summarize / Statistics |

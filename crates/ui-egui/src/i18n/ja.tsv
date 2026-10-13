@@ -383,6 +383,7 @@ Create Polygon	ポリゴンの作成
 Create Profile	プロファイルの作成
 Create Thumbnail	サムネイルの作成
 Creates a point inside each input feature.	各入力フィーチャの内部にポイントを作成します。
+Creates points from a table's x and y coordinate fields.	テーブルの X および Y 座標フィールドからポイントを作成します。
 Creates polygons around input features at a given distance.	入力フィーチャの周囲に指定した距離でポリゴンを作成します。
 Cross Section	断面
 Cross Section (2 clicks)	断面 (2 クリック)
@@ -1813,7 +1814,10 @@ World, equal-area: true sizes, shapes bend towards the edges.	世界、正積: �
 Worldview	国境
 Write a plugin	プラグインを作成
 X (mm)	X (mm)
+X Field	X フィールド
+XY Table To Point	XY テーブル → ポイント
 Y (mm)	Y (mm)
+Y Field	Y フィールド
 Yes	はい
 You have version {version}.	現在のバージョンは {version} です。
 z (m)	z (m)

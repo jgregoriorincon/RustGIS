@@ -383,6 +383,7 @@ Create Polygon	Poliqon yarat
 Create Profile	Profil yarat
 Create Thumbnail	Miniatür yarat
 Creates a point inside each input feature.	Hər giriş obyektinin daxilində nöqtə yaradır.
+Creates points from a table's x and y coordinate fields.	Cədvəlin x və y koordinat sahələrindən nöqtələr yaradır.
 Creates polygons around input features at a given distance.	Giriş obyektləri ətrafında verilmiş məsafədə poliqonlar yaradır.
 Cross Section	En kəsik
 Cross Section (2 clicks)	En kəsik (2 klik)
@@ -1813,7 +1814,10 @@ World, equal-area: true sizes, shapes bend towards the edges.	Dünya, bərabərs
 Worldview	Sərhədlər
 Write a plugin	Plagin yaz
 X (mm)	X (mm)
+X Field	X sahəsi
+XY Table To Point	XY cədvəlindən nöqtəyə
 Y (mm)	Y (mm)
+Y Field	Y sahəsi
 Yes	Bəli
 You have version {version}.	Sizdə {version} versiyası var.
 z (m)	z (m)

@@ -383,6 +383,7 @@ Create Polygon	Poligon Oluştur
 Create Profile	Profil Oluştur
 Create Thumbnail	Küçük Resim Oluştur
 Creates a point inside each input feature.	Her girdi detayının içinde bir nokta oluşturur.
+Creates points from a table's x and y coordinate fields.	Bir tablonun x ve y koordinat alanlarından noktalar oluşturur.
 Creates polygons around input features at a given distance.	Girdi detaylarının çevresinde belirli bir mesafede poligonlar oluşturur.
 Cross Section	Enine Kesit
 Cross Section (2 clicks)	Enine Kesit (2 tıklama)
@@ -1813,7 +1814,10 @@ World, equal-area: true sizes, shapes bend towards the edges.	Dünya, eşalan: g
 Worldview	Sınırlar
 Write a plugin	Eklenti yaz
 X (mm)	X (mm)
+X Field	X Alanı
+XY Table To Point	XY Tablosundan Noktaya
 Y (mm)	Y (mm)
+Y Field	Y Alanı
 Yes	Evet
 You have version {version}.	Sizdeki sürüm: {version}.
 z (m)	z (m)

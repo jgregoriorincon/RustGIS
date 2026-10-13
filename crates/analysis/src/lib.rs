@@ -17,7 +17,7 @@ pub mod rasterops;
 mod tools;
 pub mod topology;
 
-pub use tools::{TOOLS, simplify_geometry};
+pub use tools::{TOOLS, holds_coordinates, simplify_geometry};
 
 use rustgis_data::Dataset;
 use serde_json::Value;
@@ -35,6 +35,9 @@ pub enum ParamKind {
     Field,
     /// A numeric field of the first layer.
     NumericField,
+    /// A field of the first layer that can hold coordinates: a numeric field, or a text field
+    /// with numbers written in it (see [`holds_coordinates`]).
+    CoordinateField,
     Number,
     Text,
     /// One of a fixed list of choices.
