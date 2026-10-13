@@ -1200,7 +1200,7 @@ fn geoprocessing(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                     .map(|d| d.fields.iter().filter(|f| !numeric || f.ty.is_numeric()).map(|f| f.name.clone()).collect())
                     .unwrap_or_default();
                 // A field picked for another layer, which this one doesn't have: unset.
-                if ds.is_some() && !cur.is_empty() && !v.contains(&cur) {
+                if ds.is_some() && !cur.is_empty() && !v.iter().any(|f| f.eq_ignore_ascii_case(&cur)) {
                     app.gp.values.remove(p.name);
                     cur.clear();
                 }
