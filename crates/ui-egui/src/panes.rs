@@ -221,6 +221,17 @@ fn contents(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                         app.table.standalone = Some(name.clone());
                         app.session.table_layer = None;
                     }
+                    resp.context_menu(|ui| {
+                        if ui.button(tl!("Attribute Table")).clicked() {
+                            app.table.standalone = Some(name.clone());
+                            app.session.table_layer = None;
+                            ui.close();
+                        }
+                        if ui.button(tl!("Remove")).clicked() {
+                            let _ = app.run("table.remove", json!({"table": name}));
+                            ui.close();
+                        }
+                    });
                 });
             }
         }
