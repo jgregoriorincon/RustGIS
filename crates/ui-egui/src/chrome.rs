@@ -414,7 +414,13 @@ pub fn command_search(app: &mut RustGisApp, ctx: &egui::Context) {
                 if show_loc {
                     b = b.right_text(egui::RichText::new(loc).size(11.0).weak());
                 }
+                // As a menu row: a frameless button's hover fill goes under its text.
+                let under = ui.painter().add(egui::Shape::Noop);
                 let resp = ui.add(b);
+                if resp.hovered() || resp.is_pointer_button_down_on() {
+                    let fill = if resp.is_pointer_button_down_on() { t.pressed } else { t.hover };
+                    ui.painter().set(under, egui::Shape::rect_filled(resp.rect, CornerRadius::same(5), fill));
+                }
                 if resp.clicked() || (i == 0 && ui.input(|i| i.key_pressed(Key::Enter))) {
                     chosen = Some(id.clone());
                 }
