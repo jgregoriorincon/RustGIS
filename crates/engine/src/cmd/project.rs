@@ -43,6 +43,7 @@ fn reset(s: &mut Session, p: Project) {
     s.project = p;
     s.active_layer = s.map().layers.first().map(|l| l.id);
     s.table_layer = None;
+    s.table_standalone = None;
     s.active_layout = None;
     s.tool = Tool::Explore;
     s.clear_history();

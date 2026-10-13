@@ -206,14 +206,14 @@ fn contents(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
             });
         }
         // Standalone tables.
-        let tables: Vec<String> = app.session.project.tables.iter().map(|t| t.name.clone()).collect();
+        let tables: Vec<(u32, String)> = app.session.project.tables.iter().map(|t| (t.id, t.name.clone())).collect();
         if !tables.is_empty() {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.add_space(12.0);
                 ui.label(egui::RichText::new(tl!("Standalone Tables")).size(11.5).color(t.text_dim));
             });
-            for (at, name) in tables.into_iter().enumerate() {
+            for (id, name) in tables {
                 ui.horizontal(|ui| {
                     ui.add_space(30.0);
                     let (r, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
@@ -225,20 +225,14 @@ fn contents(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                             open = true;
                             ui.close();
                         }
-                        // Names can repeat: the row's position says which table.
+                        // Names can repeat: the id says which table. A view open on it closes itself.
                         if ui.button(tl!("Remove")).clicked() {
-                            // The table view shows the first table of a name: it closes with that one,
-                            // rather than turn to another table of the name.
-                            let shown = app.table.standalone.as_deref() == Some(name.as_str())
-                                && app.session.project.tables.iter().position(|t| t.name == name) == Some(at);
-                            if app.run("table.remove", json!({"table": name, "at": at})).is_ok() && shown {
-                                app.table.standalone = None;
-                            }
+                            let _ = app.run("table.remove", json!({"table": id}));
                             ui.close();
                         }
                     });
                     if open {
-                        app.table.standalone = Some(name.clone());
+                        app.session.table_standalone = Some(id);
                         app.session.table_layer = None;
                     }
                 });
@@ -675,13 +669,13 @@ fn catalog(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                 );
             }
             egui::CollapsingHeader::new(egui::RichText::new(tl!("Tables")).font(semibold(12.5))).default_open(true).show(ui, |ui| {
-                let tables: Vec<String> = app.session.project.tables.iter().map(|t| t.name.clone()).collect();
+                let tables: Vec<(u32, String)> = app.session.project.tables.iter().map(|t| (t.id, t.name.clone())).collect();
                 if tables.is_empty() {
                     ui.label(egui::RichText::new(tl!("No standalone tables")).small().weak());
                 }
-                for n in tables {
+                for (id, n) in tables {
                     if ui.link(&n).clicked() {
-                        app.table.standalone = Some(n.clone());
+                        app.session.table_standalone = Some(id);
                         app.session.table_layer = None;
                     }
                 }

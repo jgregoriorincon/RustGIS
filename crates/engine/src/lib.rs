@@ -213,6 +213,8 @@ pub struct Session {
     notices_given: u64,
     /// Layer whose attribute table is open.
     pub table_layer: Option<u32>,
+    /// The standalone table shown in the attribute table instead of a layer, by its id.
+    pub table_standalone: Option<u32>,
     /// Edits per layer id since the project was last saved (Edit › Status). A failed command's
     /// are rolled back; undo doesn't subtract them, since they count edits made, not the net change.
     pub edit_counts: std::collections::HashMap<u32, cmd::design::EditCounts>,
@@ -335,6 +337,7 @@ impl Session {
             notices: Vec::new(),
             notices_given: 0,
             table_layer: None,
+            table_standalone: None,
             clipboard: None,
             keep_tool: false,
             active_layout: None,
@@ -682,6 +685,9 @@ impl Session {
             && map.layer(id).is_none()
         {
             self.table_layer = None;
+        }
+        if self.table_standalone.is_some_and(|id| self.project.table(id).is_none()) {
+            self.table_standalone = None;
         }
     }
 

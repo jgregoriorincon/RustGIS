@@ -165,6 +165,15 @@ fn standalone_tables_keep_their_ids_in_the_project_file() {
     let id = s.project.tables.last().map(|t| t.id).unwrap();
     s.run("gp.run", &stats).unwrap();
     assert_eq!((s.project.tables.len(), s.project.tables.last().map(|t| t.id)), (3, Some(id)));
+    // The table the attribute table shows is forgotten with the table, and with the project.
+    s.table_standalone = Some(id);
+    s.run("table.remove", &json!({"table": ids[0]})).unwrap();
+    assert_eq!(s.table_standalone, Some(id), "another table's removal leaves it");
+    s.run("table.remove", &json!({"table": id})).unwrap();
+    assert_eq!(s.table_standalone, None);
+    s.table_standalone = Some(ids[1]);
+    s.run("project.new", &Value::Null).unwrap();
+    assert_eq!(s.table_standalone, None);
 }
 
 #[test]
