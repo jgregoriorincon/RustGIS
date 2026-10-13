@@ -26,8 +26,9 @@ Formats](data-formats.md).
 | Web tiles: XYZ/TMS/WMS rasters, Mapbox Vector Tiles, MapLibre styles, PMTiles and MBTiles archives | Yes | Yes (Analyze › Create Hosted Imagery) |
 | RustGIS project (`.rgis`; older `.rgisx` files open too) | Yes | Yes |
 
-Add data with **Home › Add Data** (**From URL…** downloads a file by its web address; see
-[Files on the web](data-formats.md#files-on-the-web)), by dropping files on the window, or by
+Add data with **Home › Add Data** (**From URL…** adds a file by its web address, reading a
+cloud-optimised GeoTIFF, GeoParquet or FlatGeobuf in place, a view at a time, and downloading
+others; see [Files on the web](data-formats.md#files-on-the-web)), by dropping files on the window, or by
 passing them on the command line (`rustgis places.geojson`). **Home › Add Data › Delimited
 Text…** picks a CSV's x and y (or WKT) columns, their coordinate system (such as `EPSG:2263`) and
 the separator; Add Data finds them itself (columns named like longitude/latitude,
@@ -213,6 +214,40 @@ rustgis-cli run --cmd 'osm.download={"bbox":[7.44,46.944,7.456,46.952],"preset":
 
 Both reach the network: the [AI Assistant](assistant.md) asks before it runs them, and plugins need
 the network permission. OpenStreetMap data is © OpenStreetMap contributors (ODbL).
+
+## S3 buckets
+
+An `s3://bucket/key` address works wherever data is added by its address: **Add Data › From
+URL…** and `layer.addUrl` (a cloud-optimised GeoTIFF is read in place by range, other files are
+downloaded), PMTiles archives, `?data=` links, and STAC assets whose address is an `s3://` one.
+A public bucket needs nothing more: it is read anonymously from AWS.
+
+**Home › Add Data › S3…** (`s3.connect`) connects to a private bucket, or to an S3-compatible
+service (MinIO, Cloudflare R2, Wasabi, source.coop…) by its endpoint, and browses a bucket a
+folder at a time (`s3.list`), adding an object with **Add**. A connection names its endpoint (AWS
+when empty), its region and the buckets it serves: the ones it is given (`"buckets"`) and the ones
+browsed through it this session. An `s3://` address of one of them is read through that
+connection, signed (AWS Signature Version 4) with its keys; an address of any other bucket (a
+project's, a link's) is read anonymously from AWS, never with your keys or from your endpoint.
+Keys are typed, or, on the desktop and only when chosen, read from an AWS profile
+(`"profile"`: `~/.aws/credentials` and `~/.aws/config`) or from the environment
+(`"environment": true`: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`,
+`AWS_REGION`); without any, the connection is anonymous. **AWS, anonymous** in the dialog browses
+with no keys at all.
+
+```sh
+rustgis-cli run --cmd 's3.connect={"name":"minio","endpoint":"https://minio.example.org","buckets":["my-bucket"],"accessKeyId":"…","secretAccessKey":"…"}' \
+  --cmd 's3.list={"url":"s3://my-bucket/rasters/"}' --cmd 'layer.addUrl={"url":"s3://my-bucket/rasters/dem.tif"}'
+```
+
+Keys are kept until RustGIS closes: never in a project (which keeps the `s3://` address), a
+command's result, a notice or the log. **Remember** keeps a connection's name, endpoint and region
+in the app's settings, never its secret; storing secrets in the system keychain isn't supported.
+Keys go only to the endpoint they're for: a signed request that is redirected isn't followed, and
+keys from a profile or the environment are used only with AWS or the profile's own
+`endpoint_url`. In the web app, the bucket's CORS rules must allow the page's origin (and, for a
+private bucket, the `Authorization` and `x-amz-*` headers). The [AI Assistant](assistant.md) asks
+before it connects or lists; plugins can't connect, and need the network permission to list.
 
 ## Large files
 
