@@ -1215,7 +1215,7 @@ fn geoprocessing(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                     .map()
                     .layer_by_name(&lname)
                     .map(|l| &l.dataset)
-                    .or_else(|| app.session.project.tables.iter().find(|t| t.name == lname));
+                    .or_else(|| app.session.project.tables.iter().find(|t| t.name == lname).map(|t| &t.dataset));
                 let mut v: Vec<String> = ds
                     .map(|d| d.fields.iter().filter(|f| !numeric || f.ty.is_numeric()).map(|f| f.name.clone()).collect())
                     .unwrap_or_default();

@@ -36,7 +36,7 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui) {
             let (ds, selection, title): (Dataset, Vec<usize>, String) = match layer_id.and_then(|id| app.session.map().layer(id)) {
                 Some(l) => (l.dataset.clone(), l.selection.clone(), l.name.clone()),
                 None => match app.table.standalone.as_ref().and_then(|n| app.session.project.tables.iter().find(|t| &t.name == n)) {
-                    Some(tb) => (tb.clone(), Vec::new(), tb.name.clone()),
+                    Some(tb) => (tb.dataset.clone(), Vec::new(), tb.name.clone()),
                     None => {
                         app.table.standalone = None;
                         return;

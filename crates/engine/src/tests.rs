@@ -107,15 +107,64 @@ fn table_remove_takes_a_standalone_table_out_of_the_project() {
     assert_eq!((names(&s), s.undo_depth()), (vec!["notes".to_string()], depth + 1));
     s.run("edit.undo", &Value::Null).unwrap();
     assert_eq!(names(&s), ["sites", "notes"]);
-    // Two tables of one name: `at` says which. A position that holds another table, or none, fails.
+    // Two tables of one name have ids of their own: the id says which, the name is the first.
     s.run("layer.addDataText", &json!({"fileName": "notes.csv", "text": "id,city\n1,Paris\n"})).unwrap();
     assert_eq!(names(&s), ["sites", "notes", "notes"]);
-    for at in [json!(0), json!(3), json!(-1), json!(1.5), json!("2")] {
-        assert!(s.run("table.remove", &json!({"table": "notes", "at": at})).is_err(), "{at}");
+    let ids: Vec<u32> = s.project.tables.iter().map(|t| t.id).collect();
+    assert!(ids.iter().all(|&id| id != 0) && ids[0] != ids[1] && ids[1] != ids[2] && ids[0] != ids[2], "{ids:?}");
+    for table in [json!(0), json!(9999), json!(-1), json!(1.5), json!("9999")] {
+        assert!(s.run("table.remove", &json!({"table": table})).is_err(), "{table}");
     }
-    s.run("table.remove", &json!({"table": "notes", "at": 2})).unwrap();
-    assert_eq!(names(&s), ["sites", "notes"]);
-    assert!(s.project.tables.get(1).is_some_and(|t| t.field_index("street").is_some()), "the first of the two stays");
+    s.run("table.remove", &json!({"table": ids[2]})).unwrap();
+    assert_eq!(s.project.tables.iter().map(|t| t.id).collect::<Vec<_>>(), [ids[0], ids[1]]);
+    assert!(s.project.table(ids[1]).is_some_and(|t| t.field_index("street").is_some()), "the first of the two stays");
+    // An id in text works as well, and an id isn't given again: undo brings the table back under its own.
+    s.run("table.remove", &json!({"table": ids[1].to_string()})).unwrap();
+    let again = s.run("layer.addDataText", &json!({"fileName": "more.csv", "text": "id,city\n1,Paris\n"})).unwrap();
+    assert!(again["id"].as_u64().is_some_and(|id| ids.iter().all(|&old| u64::from(old) != id)), "{again}");
+    s.run("edit.undo", &Value::Null).unwrap();
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert_eq!(s.project.tables.iter().map(|t| t.id).collect::<Vec<_>>(), [ids[0], ids[1]]);
+    s.run("edit.redo", &Value::Null).unwrap();
+    assert_eq!(s.project.tables.iter().map(|t| t.id).collect::<Vec<_>>(), [ids[0]]);
+}
+
+#[test]
+fn standalone_tables_keep_their_ids_in_the_project_file() {
+    let mut s = world();
+    for name in ["sites", "sites", "notes"] {
+        s.run("layer.addDataText", &json!({"fileName": format!("{name}.csv"), "text": "id,street\n1,Champ de Mars\n"})).unwrap();
+    }
+    s.run("table.remove", &json!({"table": "sites"})).unwrap();
+    let ids: Vec<u32> = s.project.tables.iter().map(|t| t.id).collect();
+    // Saved and read again: the same ids, and the next table gets one that was never used.
+    let text = serde_json::to_string(&s.project).unwrap();
+    let mut p = Project::from_json(&text).unwrap();
+    assert_eq!(
+        p.tables.iter().map(|t| (t.id, t.name.clone(), t.features.len())).collect::<Vec<_>>(),
+        [(ids[0], "sites".to_string(), 1), (ids[1], "notes".to_string(), 1)]
+    );
+    let next = p.add_table(rustgis_data::Dataset::new("more", rustgis_data::GeometryType::None, Vec::new()));
+    assert!(next > ids[1], "{next} after {ids:?}");
+    // A file from before tables had ids, and one with an id repeated by hand: every table gets
+    // an id of its own, and those that had a good one keep it.
+    let mut v: Value = serde_json::from_str(&text).unwrap();
+    for t in v["tables"].as_array_mut().unwrap() {
+        t.as_object_mut().unwrap().remove("id");
+    }
+    v.as_object_mut().unwrap().remove("next_table_id");
+    let old = Project::from_json(&v.to_string()).unwrap();
+    assert_eq!(old.tables.iter().map(|t| t.id).collect::<Vec<_>>(), [1, 2]);
+    v["tables"][0]["id"] = json!(7);
+    v["tables"][1]["id"] = json!(7);
+    let edited = Project::from_json(&v.to_string()).unwrap();
+    assert_eq!(edited.tables.iter().map(|t| t.id).collect::<Vec<_>>(), [7, 1]);
+    // A tool's table put again under its name keeps the id.
+    let stats = json!({"tool": "summaryStatistics", "params": {"input": "Countries", "field": "pop_est", "case": "continent"}});
+    s.run("gp.run", &stats).unwrap();
+    let id = s.project.tables.last().map(|t| t.id).unwrap();
+    s.run("gp.run", &stats).unwrap();
+    assert_eq!((s.project.tables.len(), s.project.tables.last().map(|t| t.id)), (3, Some(id)));
 }
 
 #[test]

@@ -63,7 +63,7 @@ fn find_place(s: &mut Session, p: &Value) -> CmdResult {
 /// The table or layer whose addresses are geocoded: `table` names a standalone table; `layer` a
 /// layer, or a table when no layer has its name.
 fn source<'a>(s: &'a Session, p: &Value) -> Result<&'a rustgis_data::Dataset, String> {
-    let table = |n: &str| s.project.tables.iter().find(|t| t.name == n);
+    let table = |n: &str| s.project.tables.iter().find(|t| t.name == n).map(|t| &t.dataset);
     if let Some(n) = ps(p, "table") {
         return table(n).ok_or_else(|| format!("no table named '{n}'"));
     }

@@ -229,20 +229,11 @@ pub fn commands() -> Vec<C> {
         })
         .view(),
         C::new("table.remove", "Remove Table", "Data › Table", |s, p| {
-            let name = ps(p, "table").ok_or("give the table's name (\"table\")")?;
-            // Tables can share a name: `at` says which of them is meant, else it is the first.
-            let i = match p.get("at").filter(|v| !v.is_null()) {
-                Some(v) => v
-                    .as_u64()
-                    .and_then(|i| usize::try_from(i).ok())
-                    .filter(|&i| s.project.tables.get(i).is_some_and(|t| t.name == name))
-                    .ok_or_else(|| format!("the standalone table at that position isn't '{name}'"))?,
-                None => s.project.tables.iter().position(|t| t.name == name).ok_or_else(|| format!("no standalone table named '{name}'"))?,
-            };
+            let i = s.table_index(p)?;
             s.project.tables.remove(i);
             Ok(Value::Null)
         })
-        .params(r#"{"table": "a standalone table's name", "at": "optionally its position among the standalone tables (0 = first), when names repeat"}"#),
+        .params(r#"{"table": name|id (a standalone table; of tables sharing a name, the name is the first)}"#),
         C::new("layer.fields", "Fields", "Data › Data Design", |s, p| {
             let id = s.layer_id(p)?;
             let l = s.map().layer(id).ok_or("no layer")?;
@@ -1487,8 +1478,8 @@ pub(crate) fn add_read(s: &mut Session, p: &Value, read: (rustgis_data::Dataset,
     }
     if ds.geometry_type == GeometryType::None {
         let name = ds.name.clone();
-        s.project.tables.push(ds);
-        return Ok(json!({"table": name}));
+        let id = s.project.add_table(ds);
+        return Ok(json!({"table": name, "id": id}));
     }
     let n = ds.features.len();
     let empty_before = s.map().layers.is_empty();

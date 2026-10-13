@@ -220,7 +220,7 @@ fn finish(s: &mut Session, p: &Value) -> CmdResult {
 
 struct MapInputs<'a>(
     &'a rustgis_map::Map,
-    &'a [Dataset],
+    &'a [crate::project::Table],
     std::collections::HashMap<String, Vec<usize>>,
     /// Streamed layers the tool reads, loaded whole (by lowercase name).
     std::collections::HashMap<String, Dataset>,
@@ -326,7 +326,7 @@ impl Inputs for MapInputs<'_> {
         self.3
             .get(&layer.to_ascii_lowercase())
             .or_else(|| self.0.layer_by_name(layer).map(|l| &l.dataset))
-            .or_else(|| self.1.iter().find(|t| t.name.eq_ignore_ascii_case(layer)))
+            .or_else(|| self.1.iter().find(|t| t.name.eq_ignore_ascii_case(layer)).map(|t| &t.dataset))
     }
     fn selection(&self, layer: &str) -> &[usize] {
         match self.0.layer_by_name(layer) {
@@ -425,8 +425,7 @@ fn apply(s: &mut Session, name: String, params: Value, res: Result<rustgis_analy
         }
         Output::Table(t) => {
             let n = t.name.clone();
-            s.project.tables.retain(|x| x.name != n);
-            s.project.tables.push(t);
+            s.project.put_table(t);
             json!({"table": n})
         }
         Output::Layers(outputs) => {
@@ -451,8 +450,7 @@ fn apply(s: &mut Session, name: String, params: Value, res: Result<rustgis_analy
                     }
                     OutputLayer::Table(t) => {
                         let n = t.name.clone();
-                        s.project.tables.retain(|x| x.name != n);
-                        s.project.tables.push(t);
+                        s.project.put_table(t);
                         tables.push(n);
                     }
                 }

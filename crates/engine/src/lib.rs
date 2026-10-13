@@ -705,6 +705,22 @@ impl Session {
         }
     }
 
+    /// Resolves a `table` parameter to a standalone table's position in the project: by its id,
+    /// or by its name (the first table of that name, since names can repeat).
+    pub fn table_index(&self, p: &Value) -> Result<usize, String> {
+        let tables = &self.project.tables;
+        let by_id = |id: u64| tables.iter().position(|t| u64::from(t.id) == id);
+        match p.get("table") {
+            Some(Value::Number(n)) => n.as_u64().and_then(by_id).ok_or_else(|| format!("no standalone table with id {n}")),
+            Some(Value::String(s)) => tables
+                .iter()
+                .position(|t| t.name == *s)
+                .or_else(|| s.parse::<u64>().ok().and_then(by_id))
+                .ok_or_else(|| format!("no standalone table named '{s}'")),
+            _ => Err("give the table's name or id (\"table\")".to_string()),
+        }
+    }
+
     /// The scale denominator now.
     pub fn scale(&self) -> f64 {
         self.map().scale()
