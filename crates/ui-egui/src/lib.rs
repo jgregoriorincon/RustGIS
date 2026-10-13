@@ -24,6 +24,7 @@ mod pluginsui;
 mod portalsui;
 mod reportpane;
 mod ribbon;
+mod s3ui;
 mod sqlpane;
 mod stacui;
 mod table;
@@ -266,8 +267,9 @@ pub struct UiState {
     pub downloads: Vec<(u64, String, Value, Slot<Result<Vec<u8>, String>>)>,
     /// The SQL pane's editor, results and history.
     pub sql: sqlpane::State,
-    /// GeoTIFFs by address whose headers are being read: cloud-optimised ones are added in
-    /// place, others downloaded (the `ui.addUrl` parameters, and the answer).
+    /// GeoTIFFs, FlatGeobufs and GeoParquets by address whose headers are being read: those
+    /// that can be read in place are added so, others downloaded (the `ui.addUrl` parameters,
+    /// and the answer).
     pub cog_probes: Vec<(Value, Slot<Result<bool, String>>)>,
     /// A link's data (`?data=`) has zoomed the map: the first of its files to land with something
     /// to show does, whichever it is.
@@ -276,6 +278,8 @@ pub struct UiState {
     pub service: Option<ServiceConn>,
     /// STAC Search: its choices, results and the request under way.
     pub stac: stacui::State,
+    /// S3…: the connection form, the bucket browsed and the listing under way.
+    pub s3: s3ui::State,
     /// OpenStreetMap and Boundaries: their choices and the request under way.
     pub portals: portalsui::State,
     /// Find Place searches and Geocode Addresses runs under way.
@@ -330,6 +334,7 @@ impl Default for UiState {
             link_zoomed: false,
             service: None,
             stac: Default::default(),
+            s3: Default::default(),
             portals: Default::default(),
             geocode: Default::default(),
             zarr: Default::default(),
@@ -1009,15 +1014,31 @@ impl RustGisApp {
                 if url.to_ascii_lowercase().split(['?', '#']).next().is_some_and(|u| u.ends_with(".pmtiles")) {
                     return self.run("layer.addUrl", p.clone());
                 }
-                // A GeoTIFF: its header first, off the frame; a cloud-optimised one is read in
-                // place, another downloaded (see `poll_downloads`).
-                if rustgis_engine::cmd::layer::is_tiff_url(url) && p.get("whole").and_then(Value::as_bool) != Some(true) {
+                // A GeoTIFF, FlatGeobuf or GeoParquet: its header (or footer) first, off the
+                // frame; one that can be read in place is, another is downloaded (see
+                // `poll_downloads`).
+                let remote = rustgis_engine::data::source::is_remote_name(url);
+                if (remote || rustgis_engine::cmd::layer::is_tiff_url(url)) && p.get("whole").and_then(Value::as_bool) != Some(true) {
                     let slot: Slot<Result<bool, String>> = Slot::default();
                     let land = slot.clone();
-                    rustgis_engine::render::rustgis_tiles::cog::probe(
-                        url,
-                        Box::new(move |r| *land.lock().unwrap_or_else(|e| e.into_inner()) = Some(r)),
-                    );
+                    if remote {
+                        rustgis_engine::data::source::open_url(
+                            url,
+                            Box::new(move |r| {
+                                let r = match r {
+                                    Ok(_) => Ok(true),
+                                    Err(e) if e.to_string().contains(rustgis_engine::data::source::remote::READ_WHOLE) => Ok(false),
+                                    Err(e) => Err(e.to_string()),
+                                };
+                                *land.lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
+                            }),
+                        );
+                    } else {
+                        rustgis_engine::render::rustgis_tiles::cog::probe(
+                            url,
+                            Box::new(move |r| *land.lock().unwrap_or_else(|e| e.into_inner()) = Some(r)),
+                        );
+                    }
                     self.session.notify(i18n::fmt("Reading {url}…", &[("url", url)]), false);
                     self.ui.cog_probes.push((p.clone(), slot));
                     return Ok(Value::Null);
@@ -1670,7 +1691,8 @@ impl RustGisApp {
     /// Adds the data downloads that have landed (Add Data › From URL). The bytes go to the session
     /// as they are; a download of a project that has since been closed is dropped.
     fn poll_downloads(&mut self) {
-        // GeoTIFFs whose headers are in: read in place, or downloaded whole.
+        // GeoTIFFs, FlatGeobufs and GeoParquets whose headers are in: read in place, or
+        // downloaded whole.
         let mut probed = Vec::new();
         self.ui.cog_probes.retain(|(p, slot)| match slot.lock().unwrap_or_else(|e| e.into_inner()).take() {
             Some(r) => {
@@ -1807,6 +1829,7 @@ impl RustGisApp {
         sqlpane::poll(self, ctx);
         self.poll_service();
         stacui::poll(self, ctx);
+        s3ui::poll(self, ctx);
         portalsui::poll(self, ctx);
         geocodeui::poll(self, ctx);
         zarrui::poll(self, ctx);

@@ -3433,6 +3433,22 @@ fn sql_workspace_rows_and_schema() {
 /// Serves `body` with byte ranges (`Range: bytes=a-b` answered 206) until the test ends; returns
 /// the base address and the count of bytes sent.
 fn serve_ranges(body: Vec<u8>) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    serve_file(body, true)
+}
+
+/// [`serve_ranges`], or (`ranges` false) a server that ignores `Range` and answers every request
+/// with the whole file.
+fn serve_file(body: Vec<u8>, ranges: bool) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    serve_gated(body, ranges, None)
+}
+
+/// [`serve_file`] holding every answer until `gate` is set (a request still under way, for as long
+/// as a test needs).
+fn serve_gated(
+    body: Vec<u8>,
+    ranges: bool,
+    gate: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -3443,9 +3459,20 @@ fn serve_ranges(body: Vec<u8>) -> (String, std::sync::Arc<std::sync::atomic::Ato
             let Ok(mut s) = stream else { continue };
             let mut buf = [0u8; 4096];
             let read = s.read(&mut buf).unwrap_or(0);
+            if let Some(g) = &gate {
+                let start = std::time::Instant::now();
+                while !g.load(std::sync::atomic::Ordering::Relaxed) && start.elapsed() < std::time::Duration::from_secs(60) {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+            }
             let req = String::from_utf8_lossy(&buf[..read]).to_ascii_lowercase();
-            let range = req.lines().find_map(|l| l.strip_prefix("range: bytes=")).and_then(|r| {
+            let range = req.lines().filter(|_| ranges).find_map(|l| l.strip_prefix("range: bytes=")).and_then(|r| {
                 let (a, b) = r.trim().split_once('-')?;
+                // A suffix (`-n`): the last n bytes.
+                if a.is_empty() {
+                    let n = b.parse::<usize>().ok()?.min(body.len());
+                    return Some((body.len() - n, body.len().saturating_sub(1)));
+                }
                 Some((a.parse::<usize>().ok()?, b.parse::<usize>().ok()?))
             });
             let (status, part) = match range {
@@ -3730,4 +3757,198 @@ fn zarr_stores_in_folders_and_handed_over() {
         assert!(s.run("layer.addZarr", &bad).is_err(), "{bad}");
     }
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A stand-in S3 endpoint: answers a listing, an object and a redirect, and keeps each request's
+/// head (path and headers) for the test to look at.
+fn serve_s3() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = seen.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut s) = stream else { continue };
+            let mut buf = [0u8; 8192];
+            let read = s.read(&mut buf).unwrap_or(0);
+            let req = String::from_utf8_lossy(&buf[..read]).to_string();
+            let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
+            log.lock().unwrap().push(req);
+            let (status, body): (&str, &[u8]) = if path.starts_with("/s3-test-bucket?list-type=2") {
+                ("200 OK", br#"<ListBucketResult><Name>s3-test-bucket</Name><IsTruncated>false</IsTruncated><Contents><Key>data/places.geojson</Key><Size>120</Size><LastModified>2024-01-01T00:00:00.000Z</LastModified></Contents><CommonPrefixes><Prefix>data/more/</Prefix></CommonPrefixes></ListBucketResult>"#)
+            } else if path == "/" {
+                (
+                    "200 OK",
+                    br#"<ListAllMyBucketsResult><Buckets><Bucket><Name>s3-test-bucket</Name></Bucket></Buckets></ListAllMyBucketsResult>"#,
+                )
+            } else if path.starts_with("/s3-test-bucket/data/places.geojson") {
+                ("200 OK", br#"{"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"n": 1}, "geometry": {"type": "Point", "coordinates": [10, 20]}}]}"#)
+            } else if path.starts_with("/s3-test-bucket/moved.geojson") {
+                ("301 Moved Permanently\r\nLocation: http://127.0.0.1:9/elsewhere.geojson", b"")
+            } else {
+                ("404 Not Found", b"<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>")
+            };
+            let _ = write!(s, "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+            let _ = s.write_all(body);
+        }
+    });
+    (base, seen)
+}
+
+/// S3 through a connection with credentials: listings and objects by s3:// address, signed for
+/// the connection's endpoint only; the secret never in a result; a signed request isn't
+/// redirected.
+#[test]
+fn s3_connections_listings_and_objects() {
+    let (base, seen) = serve_s3();
+    let mut s = Session::new(Project::default());
+    let r = s
+        .run(
+            "s3.connect",
+            &json!({"name": "s3-test", "endpoint": base, "buckets": ["s3-test-bucket"], "accessKeyId": "AKIDTEST", "secretAccessKey": "very-secret-key", "sessionToken": "token-1"}),
+        )
+        .unwrap();
+    assert_eq!((r["signed"].as_bool(), r["credentials"].as_str()), (Some(true), Some("keys")));
+    assert!(!r.to_string().contains("very-secret-key"));
+    let listed = s.run("s3.connections", &Value::Null).unwrap();
+    assert!(listed.to_string().contains("s3-test") && !listed.to_string().contains("very-secret-key"));
+    // A blank form is anonymous: never the environment's or a profile's keys unless asked for.
+    let r = s.run("s3.connect", &json!({"name": "s3-blank", "region": ""})).unwrap();
+    assert_eq!(
+        (r["signed"].as_bool(), r["credentials"].as_str(), r["region"].as_str()),
+        (Some(false), Some("anonymous"), Some("us-east-1"))
+    );
+    s.run("s3.disconnect", &json!({"name": "s3-blank"})).unwrap();
+    // A level of the bucket, and the connection's buckets; listing isn't an edit of the project.
+    assert!(!s.dirty && !s.can_undo());
+    let r = s.run("s3.list", &json!({"url": "s3://s3-test-bucket/data/"})).unwrap();
+    assert!(!s.dirty && !s.can_undo(), "a listing is no edit");
+    assert_eq!(r["prefixes"], json!(["data/more/"]));
+    assert_eq!(r["objects"][0]["url"], "s3://s3-test-bucket/data/places.geojson");
+    let r = s.run("s3.list", &json!({"connection": "s3-test"})).unwrap();
+    assert_eq!(r["buckets"], json!(["s3-test-bucket"]));
+    // An object by its s3:// address, signed with the connection's key (never its secret).
+    let r = s.run("layer.addUrl", &json!({"url": "s3://s3-test-bucket/data/places.geojson"})).unwrap();
+    assert_eq!(r["features"], 1);
+    {
+        let heads = seen.lock().unwrap();
+        let get = heads.iter().find(|h| h.contains("/s3-test-bucket/data/places.geojson")).unwrap().to_ascii_lowercase();
+        assert!(get.contains("authorization: aws4-hmac-sha256 credential=akidtest/"), "{get}");
+        assert!(get.contains("x-amz-security-token: token-1") && get.contains("x-amz-content-sha256: unsigned-payload"));
+        assert!(heads.iter().all(|h| !h.contains("very-secret-key")));
+    }
+    // A redirect isn't followed by a signed request; a missing key says so.
+    let e = s.run("layer.addUrl", &json!({"url": "s3://s3-test-bucket/moved.geojson"})).unwrap_err();
+    assert!(e.contains("redirect"), "{e}");
+    assert!(s.run("layer.addUrl", &json!({"url": "s3://s3-test-bucket/nope.geojson"})).unwrap_err().contains("404"));
+    // Bad parameters; credentials from this computer don't go to another endpoint.
+    for bad in [
+        json!({"name": "x", "endpoint": "ftp://h"}),
+        json!({"name": "x", "accessKeyId": "A"}),
+        json!({"name": "x", "region": "no such"}),
+        json!({"name": "x", "buckets": ["NO_"]}),
+        json!({"name": "x", "endpoint": "https://elsewhere.example", "profile": "default"}),
+    ] {
+        assert!(s.run("s3.connect", &bad).is_err(), "{bad}");
+    }
+    for bad in [json!({"url": "s3://"}), json!({"bucket": "NO_"}), json!({"connection": "nope"}), json!({"url": "https://x.org"})] {
+        assert!(s.run("s3.list", &bad).is_err(), "{bad}");
+    }
+    s.run("s3.disconnect", &json!({"name": "s3-test"})).unwrap();
+    assert!(s.run("s3.disconnect", &json!({"name": "s3-test"})).is_err());
+    // Plugins never connect (they'd choose where the user's credentials go).
+    assert!(crate::cmd::plugins::user_only("s3.connect"));
+}
+
+/// A FlatGeobuf and a GeoParquet by their address are read in place, by range: a view fetches a
+/// small part of the file; the project keeps the address and reads it again; asked to, a file is
+/// downloaded whole instead.
+#[test]
+fn flatgeobuf_and_geoparquet_by_address_are_read_in_place() {
+    use rustgis_data::{Dataset, Feature, Field, FieldType, Geometry, GeometryType, Value};
+    let mut ds = Dataset::new("grid", GeometryType::Point, vec![Field::new("n", FieldType::Integer)]);
+    for i in 0..200u32 {
+        for j in 0..200u32 {
+            let c = rustgis_geom::Coord::new(-179.0 + 1.79 * f64::from(i), -80.0 + 0.8 * f64::from(j));
+            let n = u64::from(i * 200 + j);
+            ds.features.push(Feature { id: n + 1, geometry: Some(Geometry::Point(c)), attrs: vec![Value::Int(n as i64)] });
+        }
+    }
+    let fgb = rustgis_data::source::fgb::write(&ds).unwrap();
+    let total = fgb.len();
+    let (base, sent) = serve_ranges(fgb.clone());
+    let mut s = Session::new(Project::default());
+    let r = s.run("layer.addUrl", &json!({"url": format!("{base}/grid.fgb")})).unwrap();
+    assert_eq!((r["inPlace"].as_bool(), r["streamed"].as_bool(), r["features"].as_u64()), (Some(true), Some(true), Some(40_000)), "{r}");
+    let id = r["layer"].as_u64().unwrap() as u32;
+    // A view: read as the screen reads, in the background.
+    let view = rustgis_geom::Extent::new(10.0, 10.0, 14.0, 13.0);
+    let sync = |s: &mut Session| {
+        let mut pending = s.map_mut().sync_sources(&view, false);
+        let start = std::time::Instant::now();
+        while pending && start.elapsed() < std::time::Duration::from_secs(30) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            pending = s.map_mut().sync_sources(&view, false);
+        }
+        assert!(!pending);
+    };
+    sync(&mut s);
+    let l = s.map().layer(id).unwrap();
+    let w = l.source.as_ref().unwrap().window().unwrap().extent;
+    assert!(!l.dataset.features.is_empty(), "{:?}", l.source.as_ref().unwrap().error);
+    assert!(l.dataset.features.iter().all(|f| w.contains(f.geometry.as_ref().unwrap().extent().center())));
+    let read = sent.load(std::sync::atomic::Ordering::Relaxed);
+    assert!(read < total / 4, "{read} of {total} bytes read");
+    // The project keeps the address, and reads it again.
+    let text = serde_json::to_string(&s.project).unwrap();
+    assert!(text.contains("grid.fgb") && !text.contains("embedded"));
+    let mut t = Session::new(Project::default());
+    t.run("project.openText", &json!({"text": text})).unwrap();
+    sync(&mut t);
+    let again = t.map().layers.iter().find(|l| l.is_streamed()).unwrap();
+    assert!(!again.dataset.features.is_empty(), "{:?}", again.source.as_ref().unwrap().error);
+    // Load All Features: every feature, fetched.
+    assert_eq!(again.load_all().unwrap().features.len(), 40_000);
+    // Copies of a layer still opening (undo snapshots, Load All Features) all open: they share
+    // what opening brought, none takes it from the others.
+    // The server holds its answers, so the copies are made while the header is still on its way.
+    let gate = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (other, _) = serve_gated(fgb.clone(), true, Some(gate.clone()));
+    let mut u = Session::new(Project::default());
+    u.run("project.openText", &json!({"text": text.replace(&base, &other)})).unwrap();
+    let mut a = u.map().layers.iter().find(|l| l.is_streamed()).unwrap().source.clone().unwrap();
+    a.open().unwrap();
+    assert!(!a.is_open() && a.is_pending(), "opened before its header was fetched");
+    let mut b = a.clone();
+    gate.store(true, std::sync::atomic::Ordering::Relaxed);
+    a.wait_open(std::time::Duration::from_secs(60));
+    b.wait_open(std::time::Duration::from_secs(60));
+    assert!(a.is_open() && b.is_open(), "{:?} {:?}", a.error, b.error);
+
+    // A GeoParquet (with its bbox covering), from its footer at the end.
+    let pq = rustgis_data::source::parquet::write(&ds).unwrap();
+    let (base, _) = serve_ranges(pq);
+    let r = s.run("layer.addUrl", &json!({"url": format!("{base}/grid.parquet"), "name": "PQ"})).unwrap();
+    assert_eq!(r["inPlace"].as_bool(), Some(true), "{r}");
+    let id = r["layer"].as_u64().unwrap() as u32;
+    sync(&mut s);
+    let l = s.map().layer(id).unwrap();
+    assert!(!l.dataset.features.is_empty(), "{:?}", l.source.as_ref().unwrap().error);
+    assert_eq!(l.name, "PQ");
+
+    // Asked to: downloaded whole.
+    let r = s.run("layer.addUrl", &json!({"url": format!("{base}/grid.parquet"), "whole": true, "name": "Whole"})).unwrap();
+    assert!(r.get("inPlace").is_none(), "{r}");
+    // A server that ignores ranges answers the footer's request with the whole, longer file:
+    // downloaded whole instead, not an error.
+    let pq = rustgis_data::source::parquet::write(&ds).unwrap();
+    assert!(pq.len() > 256 << 10);
+    let (base, _) = serve_file(pq, false);
+    let r = s.run("layer.addUrl", &json!({"url": format!("{base}/grid.parquet"), "name": "NoRanges"})).unwrap();
+    assert!(r.get("inPlace").is_none(), "{r}");
+    assert!(s.map().layer_by_name("NoRanges").is_some(), "{r}");
+    // A file that isn't one: an error, not a hang.
+    let (base, _) = serve_ranges(b"not a flatgeobuf at all".to_vec());
+    assert!(s.run("layer.addUrl", &json!({"url": format!("{base}/x.fgb")})).is_err());
 }
