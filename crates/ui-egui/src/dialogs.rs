@@ -95,10 +95,11 @@ impl Dialogs {
             "definitionQuery" => self.text = active.and_then(|l| l.definition_query.clone()).unwrap_or_default(),
             "renameLayer" => self.text = active.map(|l| l.name.clone()).unwrap_or_default(),
             "exportLayer" => self.mode = "geojson",
-            // A table of addresses is what's usually geocoded.
+            // A table of addresses is what's usually geocoded: picked by its id (`flag` says the
+            // choice is a table), since names can repeat.
             "geocode" => {
                 if let Some(t) = s.project.tables.last() {
-                    self.layer = t.name.clone();
+                    (self.layer, self.flag) = (t.id.to_string(), true);
                 }
             }
             _ => {}
