@@ -393,6 +393,18 @@ fn show_columns(d: &mut Dialogs, found: Result<Value, String>) {
     }
 }
 
+/// After the columns are read again: the x/y columns (or the WKT column) picked before stay picked
+/// when the file still has them; otherwise the ones found are.
+fn keep_picked(d: &mut Dialogs, [x, y, wkt]: [String; 3]) {
+    let has = |c: &String| !c.is_empty() && d.list.contains(c);
+    let (xy, w) = (has(&x) && has(&y), has(&wkt));
+    if xy {
+        (d.a, d.b, d.c) = (x, y, String::new());
+    } else if w {
+        (d.a, d.b, d.c) = (String::new(), String::new(), wkt);
+    }
+}
+
 /// Add Delimited Text, for the file picked: which of its columns hold the coordinates (or WKT
 /// geometry), their coordinate system and the separator.
 fn add_csv(app: &mut RustGisApp, ui: &mut egui::Ui) -> bool {
@@ -456,7 +468,9 @@ fn add_csv(app: &mut RustGisApp, ui: &mut egui::Ui) -> bool {
     // Another separator splits the header differently: its columns are read again.
     if reread && let Some(file) = &app.dialogs.csv {
         let found = csv_columns(file, app.dialogs.mode);
+        let picked = [app.dialogs.a.clone(), app.dialogs.b.clone(), app.dialogs.c.clone()];
         show_columns(&mut app.dialogs, found);
+        keep_picked(&mut app.dialogs, picked);
     }
     buttons(app, ui, "Add", |app| {
         let mut p = json!({});
