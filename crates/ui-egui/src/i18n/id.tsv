@@ -247,6 +247,7 @@ Checking for updates…	Memeriksa pembaruan…
 China	Tiongkok
 Choose a band combination to display the raster layer.	Pilih kombinasi band untuk menampilkan layer raster.
 Choose a contrast stretch for the raster layer.	Pilih peregangan kontras untuk layer raster.
+Choose a delimited text file or a spreadsheet, then pick its columns.	Pilih file teks berpembatas atau lembar kerja, lalu pilih kolomnya.
 Choose a model.	Pilih model.
 Choose a resampling type for the raster layer.	Pilih tipe resampling untuk layer raster.
 Choose extra buttons for the Quick Access Toolbar.	Pilih tombol tambahan untuk Bilah Akses Cepat.
@@ -323,6 +324,7 @@ Color Vision	Penglihatan Warna
 Color Vision Simulator	Simulator Penglihatan Warna
 Colormap	Peta Warna
 Colors from the raster's own color table.	Warna dari tabel warna raster itu sendiri.
+Columns named like longitude/latitude, easting/northing or geometry are picked for you.	Kolom bernama seperti longitude/latitude, easting/northing atau geometry dipilih secara otomatis.
 Combinations from the box above, one per line	Kombinasi dari kotak di atas, satu per baris
 Command\nSearch	Cari\nPerintah
 command is required	command wajib diisi

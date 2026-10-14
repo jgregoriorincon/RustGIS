@@ -31,10 +31,11 @@ Add data with **Home › Add Data** (**From URL…** adds a file by its web addr
 cloud-optimised GeoTIFF, GeoParquet or FlatGeobuf in place, a view at a time, and downloading
 others; see [Files on the web](data-formats.md#files-on-the-web)), by dropping files on the window, or by
 passing them on the command line (`rustgis places.geojson`). **Home › Add Data › Delimited
-Text…** picks a CSV's x and y (or WKT) columns, their coordinate system (such as `EPSG:2263`) and
-the separator; Add Data finds them itself (columns named like longitude/latitude,
-easting/northing or geometry, and EWKT's `SRID=`) and says when coordinates aren't
-longitude/latitude. A CSV without coordinate columns, or a layer without geometry, opens as a
+Text…** asks for a CSV or a spreadsheet first, then lists its columns to pick the x and y (or WKT)
+ones from, with the coordinate system (such as `EPSG:2263`) and the separator (changing it reads
+the columns again); `info.fileColumns` lists them for scripts. Add Data finds them itself
+(columns named like longitude/latitude, easting/northing or geometry, and EWKT's `SRID=`) and
+says when coordinates aren't longitude/latitude. A CSV without coordinate columns, or a layer without geometry, opens as a
 standalone table, listed under the map in Layers; right-click it to open or remove it. Tables
 can share a name: commands and tools take a table's id (`info.project` lists them) as well as its
 name, which stands for the first table of that name. An id given as a number is never taken for

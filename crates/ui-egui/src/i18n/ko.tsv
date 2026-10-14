@@ -247,6 +247,7 @@ Checking for updates…	업데이트 확인 중…
 China	중국
 Choose a band combination to display the raster layer.	래스터 레이어를 표시할 밴드 조합을 선택합니다.
 Choose a contrast stretch for the raster layer.	래스터 레이어의 대비 스트레치를 선택합니다.
+Choose a delimited text file or a spreadsheet, then pick its columns.	구분 기호로 분리된 텍스트 파일이나 스프레드시트를 선택한 다음 열을 고르세요.
 Choose a model.	모델을 선택하세요.
 Choose a resampling type for the raster layer.	래스터 레이어의 리샘플링 유형을 선택합니다.
 Choose extra buttons for the Quick Access Toolbar.	빠른 실행 도구 모음에 추가할 버튼을 선택합니다.
@@ -323,6 +324,7 @@ Color Vision	색각
 Color Vision Simulator	색각 시뮬레이터
 Colormap	컬러맵
 Colors from the raster's own color table.	래스터 자체 색상표의 색상입니다.
+Columns named like longitude/latitude, easting/northing or geometry are picked for you.	longitude/latitude, easting/northing 또는 geometry 같은 이름의 열은 자동으로 선택됩니다.
 Combinations from the box above, one per line	위 상자에 있는 값의 조합, 한 줄에 하나씩
 Command\nSearch	명령\n검색
 command is required	command가 필요합니다

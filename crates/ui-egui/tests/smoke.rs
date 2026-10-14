@@ -403,8 +403,8 @@ fn old_and_unknown_tab_names_open_a_current_tab() {
     }
 }
 
-/// Add Delimited Text in the web app: the dialog's options go with the file picked next (and
-/// only that one), so a projected CSV lands in place.
+/// Add Delimited Text in the web app with a script's options: they go with the file picked next
+/// (and only that one), so a projected CSV lands in place.
 #[test]
 fn delimited_text_options_go_with_the_picked_file() {
     let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -416,7 +416,7 @@ fn delimited_text_options_go_with_the_picked_file() {
     let mut app = RustGisApp::with_sample().with_services(services);
     app.run("ui.addDelimited", json!(null)).unwrap();
     app.run("ui.addDelimited", json!({"x": "east", "y": "north", "crs": "EPSG:2263", "delimiter": ";"})).unwrap();
-    assert_eq!(asked.lock().unwrap().as_slice(), ["text"]);
+    assert_eq!(asked.lock().unwrap().as_slice(), ["text", "text"]);
     // A drop (or another picker's file) doesn't take the options.
     let r = app.open_picked("dropped.csv", b"lon,lat\n3,4\n").unwrap();
     let e = app.session.map().layer(r["layer"].as_u64().unwrap() as u32).unwrap().extent();
@@ -431,6 +431,46 @@ fn delimited_text_options_go_with_the_picked_file() {
     let r = app.open_picked(&picked, b"lon,lat\n1,2\n").unwrap();
     let e = app.session.map().layer(r["layer"].as_u64().unwrap() as u32).unwrap().extent();
     assert_eq!((e.min_x, e.min_y), (1.0, 2.0));
+}
+
+/// Add Delimited Text in the web app: the file first, then the dialog lists its columns (the ones
+/// found by name picked), and the ones picked there place it.
+#[test]
+fn delimited_text_dialog_lists_the_picked_files_columns() {
+    let services = rustgis_ui_egui::Services { open_async: Some(Box::new(|_: &str| {})), ..Default::default() };
+    let app = RustGisApp::with_sample().with_services(services);
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1400.0, 860.0)).with_max_steps(64).build_ui_state(
+        |ui, app: &mut RustGisApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    h.state_mut().run("ui.addDelimited", json!(null)).unwrap();
+    let picked = format!("{}parks.csv", rustgis_ui_egui::DELIMITED_PICK);
+    h.state_mut().open_picked(&picked, b"name;east;north\nCentral Park;992000;220000\n").unwrap();
+    assert_eq!(h.state().dialogs.open, Some("addCsv"));
+    assert_eq!(h.state().dialogs.list, ["name", "east", "north"]);
+    assert_eq!(h.state().dialogs.mode, ";", "the separator found");
+    assert!(h.state().dialogs.a.is_empty(), "east isn't a name RustGIS finds by itself");
+    {
+        let d = &mut h.state_mut().dialogs;
+        (d.a, d.b, d.text) = ("east".into(), "north".into(), "EPSG:2263".into());
+    }
+    h.step();
+    h.step();
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Add").click();
+    h.step();
+    h.step();
+    assert_eq!(h.state().dialogs.open, None);
+    let e = h.state().session.map().layer_by_name("parks").unwrap().extent();
+    assert!((e.min_x + 73.96).abs() < 0.05 && (e.min_y - 40.78).abs() < 0.05, "{e:?}");
+    // A file whose columns are found: picked for you.
+    h.state_mut().run("ui.addDelimited", json!(null)).unwrap();
+    let picked = format!("{}stops.csv", rustgis_ui_egui::DELIMITED_PICK);
+    h.state_mut().open_picked(&picked, b"stop,Lat,Lon\nA,1,2\n").unwrap();
+    assert_eq!((h.state().dialogs.a.as_str(), h.state().dialogs.b.as_str()), ("Lon", "Lat"));
 }
 
 /// Add Data From URL downloads off the frame and adds the file when it lands; a failed download

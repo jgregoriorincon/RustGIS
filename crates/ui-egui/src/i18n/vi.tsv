@@ -247,6 +247,7 @@ Checking for updates…	Đang kiểm tra cập nhật…
 China	Trung Quốc
 Choose a band combination to display the raster layer.	Chọn tổ hợp kênh để hiển thị lớp raster.
 Choose a contrast stretch for the raster layer.	Chọn kiểu kéo giãn độ tương phản cho lớp raster.
+Choose a delimited text file or a spreadsheet, then pick its columns.	Chọn một tệp văn bản phân tách hoặc một bảng tính, rồi chọn các cột của nó.
 Choose a model.	Hãy chọn một mô hình.
 Choose a resampling type for the raster layer.	Chọn kiểu lấy mẫu lại cho lớp raster.
 Choose extra buttons for the Quick Access Toolbar.	Chọn các nút bổ sung cho thanh công cụ truy cập nhanh.
@@ -323,6 +324,7 @@ Color Vision	Thị giác màu
 Color Vision Simulator	Trình mô phỏng thị giác màu
 Colormap	Bản đồ màu
 Colors from the raster's own color table.	Màu lấy từ bảng màu riêng của raster.
+Columns named like longitude/latitude, easting/northing or geometry are picked for you.	Các cột có tên như longitude/latitude, easting/northing hoặc geometry được chọn sẵn cho bạn.
 Combinations from the box above, one per line	Các tổ hợp từ ô phía trên, mỗi dòng một tổ hợp
 Command\nSearch	Tìm\nlệnh
 command is required	cần có lệnh

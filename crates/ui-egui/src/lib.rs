@@ -268,7 +268,8 @@ pub struct UiState {
     pub pane_sets: Vec<(String, Option<LeftPane>, Option<RightPane>, String)>,
     /// The command an item picked in the browser opens with (web).
     pub pending_open: Option<&'static str>,
-    /// Add Delimited Text's options, for the file being picked (web).
+    /// Add Delimited Text, for the file being picked (web): `null` opens its dialog for the file,
+    /// a script's options are read with it.
     pub pending_csv: Option<Value>,
     /// Data downloading from web addresses (Add Data › From URL): the address, the parameters to
     /// add it with, and where the download lands.
@@ -601,14 +602,14 @@ impl RustGisApp {
         self.open_bytes_with(name, bytes, None)
     }
 
-    /// Opens a file from the inbox: one the `"text"` picker marked ([`DELIMITED_PICK`]) is read
-    /// with Add Delimited Text's options.
+    /// Opens a file from the inbox: one the `"text"` picker marked ([`DELIMITED_PICK`]) opens Add
+    /// Delimited Text for it, or is read with a script's options.
     pub fn open_picked(&mut self, name: &str, bytes: &[u8]) -> Result<Value, String> {
         match name.strip_prefix(DELIMITED_PICK) {
-            Some(name) => {
-                let csv = self.ui.pending_csv.take();
-                self.open_bytes_with(name, bytes, csv)
-            }
+            Some(name) => match self.ui.pending_csv.take() {
+                Some(Value::Null) => dialogs::open_csv(self, name, dialogs::CsvSource::Bytes(bytes.to_vec())),
+                csv => self.open_bytes_with(name, bytes, csv),
+            },
             None => self.open_bytes(name, bytes),
         }
     }
@@ -1015,24 +1016,27 @@ impl RustGisApp {
                     self.ui.tab = ribbon::current_tab(t).to_string();
                 }
             }
-            // Delimited text with its columns and coordinate system: the dialog, then (with the
-            // dialog's options) the file.
+            // Delimited text: the file, then the dialog to pick its columns. With options (a
+            // script's), the file is read with them instead.
             "ui.addDelimited" => {
-                if !p.is_object() {
-                    return self.run("ui.dialog", json!({"name": "addCsv"}));
-                }
+                let opts = p.is_object().then(|| p.clone());
                 if let Some(open) = &self.services.open_async {
                     self.ui.pending_layout_picture = false;
                     self.ui.pending_picture = None;
                     self.ui.pending_open = None;
-                    self.ui.pending_csv = Some(p.clone());
+                    // `null`: the dialog, for the file picked.
+                    self.ui.pending_csv = Some(opts.unwrap_or(Value::Null));
                     open("text");
                 } else if let Some(path) =
                     dialogs::pick_open(&["csv", "tsv", "txt", "xlsx", "xlsm", "xlsb", "xls", "ods"], tl!("Delimited text and spreadsheets"))
                 {
-                    let mut q = p.clone();
-                    q["path"] = json!(path);
-                    return self.run("layer.addData", q);
+                    return match opts {
+                        Some(mut q) => {
+                            q["path"] = json!(path);
+                            self.run("layer.addData", q)
+                        }
+                        None => dialogs::open_csv(self, &path.clone(), dialogs::CsvSource::Path(path)),
+                    };
                 }
             }
             // A STAC item's or collection's address (a `?stac=` link): STAC Search opens on it,

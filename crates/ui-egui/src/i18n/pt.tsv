@@ -247,6 +247,7 @@ Checking for updates…	Procurando atualizações…
 China	China
 Choose a band combination to display the raster layer.	Escolha uma combinação de bandas para exibir a camada raster.
 Choose a contrast stretch for the raster layer.	Escolha um realce de contraste para a camada raster.
+Choose a delimited text file or a spreadsheet, then pick its columns.	Escolha um arquivo de texto delimitado ou uma planilha e depois as colunas.
 Choose a model.	Escolha um modelo.
 Choose a resampling type for the raster layer.	Escolha um tipo de reamostragem para a camada raster.
 Choose extra buttons for the Quick Access Toolbar.	Escolher botões extras para a barra de ferramentas de acesso rápido.
@@ -323,6 +324,7 @@ Color Vision	Visão de cores
 Color Vision Simulator	Simulador de visão de cores
 Colormap	Mapa de cores
 Colors from the raster's own color table.	Cores da própria tabela de cores do raster.
+Columns named like longitude/latitude, easting/northing or geometry are picked for you.	Colunas com nomes como longitude/latitude, easting/northing ou geometry são escolhidas para você.
 Combinations from the box above, one per line	Combinações da caixa acima, uma por linha
 Command\nSearch	Pesquisar\ncomandos
 command is required	command é obrigatório

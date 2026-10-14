@@ -247,6 +247,7 @@ Checking for updates…	Güncellemeler denetleniyor…
 China	Çin
 Choose a band combination to display the raster layer.	Raster katmanını görüntülemek için bir bant kombinasyonu seçin.
 Choose a contrast stretch for the raster layer.	Raster katmanı için bir kontrast germe seçin.
+Choose a delimited text file or a spreadsheet, then pick its columns.	Sınırlandırılmış bir metin dosyası veya elektronik tablo seçin, ardından sütunlarını seçin.
 Choose a model.	Bir model seçin.
 Choose a resampling type for the raster layer.	Raster katmanı için bir yeniden örnekleme türü seçin.
 Choose extra buttons for the Quick Access Toolbar.	Hızlı Erişim Araç Çubuğu için ek düğmeler seç.
@@ -323,6 +324,7 @@ Color Vision	Renk Görme
 Color Vision Simulator	Renk Görme Simülatörü
 Colormap	Renk haritası
 Colors from the raster's own color table.	Rasterin kendi renk tablosundaki renkler.
+Columns named like longitude/latitude, easting/northing or geometry are picked for you.	longitude/latitude, easting/northing veya geometry gibi adlandırılmış sütunlar sizin için seçilir.
 Combinations from the box above, one per line	Yukarıdaki kutudan kombinasyonlar, her satıra bir tane
 Command\nSearch	Komut\nAra
 command is required	command gerekli

@@ -247,6 +247,7 @@ Checking for updates…	მიმდინარეობს განახლ�
 China	ჩინეთი
 Choose a band combination to display the raster layer.	აირჩიეთ არხების კომბინაცია რასტრული ფენის საჩვენებლად.
 Choose a contrast stretch for the raster layer.	აირჩიეთ კონტრასტის გაჭიმვა რასტრული ფენისთვის.
+Choose a delimited text file or a spreadsheet, then pick its columns.	აირჩიეთ გამყოფიანი ტექსტური ფაილი ან ცხრილი, შემდეგ კი მისი სვეტები.
 Choose a model.	აირჩიეთ მოდელი.
 Choose a resampling type for the raster layer.	აირჩიეთ რესემპლირების ტიპი რასტრული ფენისთვის.
 Choose extra buttons for the Quick Access Toolbar.	აირჩიეთ დამატებითი ღილაკები სწრაფი წვდომის პანელისთვის.
@@ -323,6 +324,7 @@ Color Vision	ფერთა აღქმა
 Color Vision Simulator	ფერთა აღქმის სიმულატორი
 Colormap	ფერთა რუკა
 Colors from the raster's own color table.	ფერები რასტრის საკუთარი ფერთა ცხრილიდან.
+Columns named like longitude/latitude, easting/northing or geometry are picked for you.	სვეტები სახელებით, როგორიცაა longitude/latitude, easting/northing ან geometry, ავტომატურად აირჩევა.
 Combinations from the box above, one per line	ზემოთ მოცემული ველიდან კომბინაციები, თითო ხაზზე ერთი
 Command\nSearch	ბრძანებების\nძიება
 command is required	საჭიროა ბრძანება

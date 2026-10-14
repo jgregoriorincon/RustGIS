@@ -247,6 +247,7 @@ Checking for updates…	Проверка обновлений…
 China	Китай
 Choose a band combination to display the raster layer.	Выберите комбинацию каналов для отображения растрового слоя.
 Choose a contrast stretch for the raster layer.	Выберите растяжку контраста для растрового слоя.
+Choose a delimited text file or a spreadsheet, then pick its columns.	Выберите текстовый файл с разделителями или электронную таблицу, затем — её столбцы.
 Choose a model.	Выберите модель.
 Choose a resampling type for the raster layer.	Выберите тип передискретизации для растрового слоя.
 Choose extra buttons for the Quick Access Toolbar.	Выбрать дополнительные кнопки для панели быстрого доступа.
@@ -323,6 +324,7 @@ Color Vision	Цветовое зрение
 Color Vision Simulator	Симулятор цветового зрения
 Colormap	Цветовая карта
 Colors from the raster's own color table.	Цвета из собственной цветовой таблицы растра.
+Columns named like longitude/latitude, easting/northing or geometry are picked for you.	Столбцы с именами вроде longitude/latitude, easting/northing или geometry выбираются автоматически.
 Combinations from the box above, one per line	Сочетания из поля выше, по одному в строке
 Command\nSearch	Поиск\nкоманд
 command is required	требуется command

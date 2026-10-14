@@ -247,6 +247,7 @@ Checking for updates…	更新を確認しています…
 China	中国
 Choose a band combination to display the raster layer.	ラスター レイヤーを表示するバンドの組み合わせを選択します。
 Choose a contrast stretch for the raster layer.	ラスター レイヤーのコントラスト ストレッチを選択します。
+Choose a delimited text file or a spreadsheet, then pick its columns.	区切りテキストファイルまたはスプレッドシートを選び、次にその列を選択します。
 Choose a model.	モデルを選択してください。
 Choose a resampling type for the raster layer.	ラスター レイヤーのリサンプリング タイプを選択します。
 Choose extra buttons for the Quick Access Toolbar.	クイック アクセス ツールバーに追加するボタンを選択します。
@@ -323,6 +324,7 @@ Color Vision	色覚
 Color Vision Simulator	色覚シミュレーター
 Colormap	カラーマップ
 Colors from the raster's own color table.	ラスター自身のカラー テーブルの色。
+Columns named like longitude/latitude, easting/northing or geometry are picked for you.	longitude/latitude、easting/northing、geometry のような名前の列は自動的に選択されます。
 Combinations from the box above, one per line	上のボックスの値の組み合わせ (1 行に 1 つ)
 Command\nSearch	コマンド\n検索
 command is required	command は必須です
