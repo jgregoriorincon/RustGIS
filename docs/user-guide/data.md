@@ -40,8 +40,8 @@ can share a name: commands and tools take a table's id (`info.project` lists the
 name, which stands for the first table of that name. An id given as a number is never taken for
 a name. The Tools pane and Geocode Addresses send the id of the table picked; a tool's run keeps
 the table's name beside it (`input_name`). The **XY Table To Point** tool
-([Geoprocessing](analysis.md)) makes points of a table already in the project, from two fields of
-coordinates and their coordinate system. In a text field a single comma is the decimal separator
+([Geoprocessing](analysis.md), and a table's right-click menu) makes points of a table already in
+the project, from two fields of coordinates and their coordinate system. In a text field a single comma is the decimal separator
 (`1,234` is 1.234); thousands separators are not read.
 **Home › Add Data › Graphics Layer** adds a layer for [drawn graphics](cartography.md#graphics),
 and **Insert › Layer Templates** adds empty layers with ready-made schemas to draw into.

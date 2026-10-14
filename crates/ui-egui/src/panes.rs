@@ -225,6 +225,10 @@ fn contents(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                             open = true;
                             ui.close();
                         }
+                        if ui.button(tl!("XY Table To Point…")).clicked() {
+                            let _ = app.run("ui.gp.open", json!({"tool": "xyTableToPoint", "table": id}));
+                            ui.close();
+                        }
                         // Names can repeat: the id says which table. A view open on it closes itself.
                         if ui.button(tl!("Remove")).clicked() {
                             let _ = app.run("table.remove", json!({"table": id}));
@@ -886,6 +890,16 @@ impl GpForm {
             if let Some(v) = v {
                 self.values.insert(p.name, v);
             }
+        }
+    }
+
+    /// Puts a standalone table, by its id, in the open tool's first input that takes one.
+    pub fn pick_table(&mut self, id: u32, s: &Session) {
+        let spec = self.tool.and_then(rustgis_engine::analysis::tool);
+        let input = spec.and_then(|t| t.params.iter().find(|p| p.kind == ParamKind::Layer));
+        if let (Some(p), Some(t)) = (input, s.project.table(id)) {
+            self.values.insert(p.name, t.name.clone());
+            self.tables.insert(p.name, id);
         }
     }
 }
