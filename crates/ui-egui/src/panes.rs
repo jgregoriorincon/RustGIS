@@ -1178,11 +1178,21 @@ fn geoprocessing(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
     ui.add_space(4.0);
     ui.separator();
     ui.add_space(4.0);
+    // A standalone table is picked by its id, since names can repeat, and shown by its name.
+    let tables: Vec<(String, String)> = app.session.project.tables.iter().map(|t| (t.id.to_string(), t.name.clone())).collect();
+    // The table a value stands for: its id, unless a layer has that for a name (a tool looks
+    // for the layer first).
+    let table_name = |v: &str| -> Option<String> {
+        if app.session.map().layer_by_name(v).is_some() {
+            return None;
+        }
+        tables.iter().find(|(id, _)| id == v).map(|(_, name)| name.clone())
+    };
     let layer_names = |filter: Option<GeometryType>| -> Vec<String> {
         let mut v: Vec<String> =
             app.session.map().layers.iter().filter(|l| filter.is_none_or(|g| l.geometry_type() == g)).map(|l| l.name.clone()).collect();
         if filter.is_none() {
-            v.extend(app.session.project.tables.iter().map(|t| t.name.clone()));
+            v.extend(tables.iter().map(|(id, _)| id.clone()));
         }
         v
     };
@@ -1206,12 +1216,11 @@ fn geoprocessing(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
             ParamKind::PointLayer => Some(layer_names(Some(GeometryType::Point))),
             ParamKind::Field | ParamKind::NumericField | ParamKind::CoordinateField => {
                 let lname = first_layer.and_then(|n| app.gp.values.get(n)).cloned().unwrap_or_default();
-                let ds = app
-                    .session
-                    .map()
-                    .layer_by_name(&lname)
-                    .map(|l| &l.dataset)
-                    .or_else(|| app.session.project.tables.iter().find(|t| t.name == lname).map(|t| &t.dataset));
+                // The layer or table as the tool will find it: a table by its name or its id.
+                let ds = app.session.map().layer_by_name(&lname).map(|l| &l.dataset).or_else(|| {
+                    let tables = &app.session.project.tables;
+                    rustgis_engine::project::find_table(tables, &lname).and_then(|i| tables.get(i)).map(|t| &t.dataset)
+                });
                 let offered = |d: &rustgis_engine::data::Dataset, i: usize, f: &rustgis_engine::data::Field| match p.kind {
                     ParamKind::NumericField => f.ty.is_numeric(),
                     ParamKind::CoordinateField => rustgis_engine::analysis::holds_coordinates(d, i),
@@ -1274,6 +1283,8 @@ fn geoprocessing(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                         "—".to_string()
                     } else if choice {
                         tl!(v).to_string()
+                    } else if p.kind == ParamKind::Layer {
+                        table_name(v).unwrap_or_else(|| v.to_string())
                     } else {
                         v.to_string()
                     }
@@ -1303,6 +1314,15 @@ fn geoprocessing(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         }
         ui.add_space(4.0);
     }
+    // A table goes by its id, so its name goes beside it (`input_name`) for whoever reads the run
+    // in the history. A plugin's tool gets only the parameters it declares.
+    let table_notes: Vec<(String, String)> = spec
+        .params
+        .iter()
+        .filter(|p| p.kind == ParamKind::Layer && !spec.id.starts_with(rustgis_engine::plugins::PREFIX))
+        .filter_map(|p| Some((format!("{}_name", p.name), table_name(app.gp.values.get(p.name)?.as_str())?)))
+        .filter(|(note, _)| !spec.params.iter().any(|q| q.name == note.as_str()))
+        .collect();
     ui.add_space(8.0);
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
         // One browser run at a time.
@@ -1318,6 +1338,7 @@ fn geoprocessing(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                     params.insert(p.name.to_string(), val);
                 }
             }
+            params.extend(table_notes.iter().map(|(k, name)| (k.clone(), json!(name))));
             let params = Value::Object(params);
             if rustgis_engine::cmd::gp::is_geolibre_tool(spec) && app.services.geolibre_run.is_some() {
                 // The browser's runner is asynchronous: start it, and `poll_geolibre` finishes.
