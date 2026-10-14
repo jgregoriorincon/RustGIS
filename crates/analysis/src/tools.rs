@@ -98,9 +98,16 @@ pub static TOOLS: &[ToolSpec] = &[
                 kind: K::CoordinateField,
                 required: true,
                 default: "",
-                help: "Longitude or easting: numbers, or text holding them (a decimal comma is read too).",
+                help: "Longitude or easting: numbers, or text holding them. A single comma is the decimal separator (1,234 is 1.234).",
             },
-            P { name: "y", label: "Y Field", kind: K::CoordinateField, required: true, default: "", help: "Latitude or northing." },
+            P {
+                name: "y",
+                label: "Y Field",
+                kind: K::CoordinateField,
+                required: true,
+                default: "",
+                help: "Latitude or northing, read as the X field is.",
+            },
             P {
                 name: "crs",
                 label: "Coordinate System",
@@ -439,7 +446,9 @@ fn feature_to_point(inp: &dyn Inputs, p: &Json) -> Result<ToolResult, String> {
 }
 
 /// A coordinate from a table cell: a number, or text holding one, written with a decimal point
-/// or (when it has no point) a single decimal comma, as spreadsheets in many languages do.
+/// or (when it has no point) a single decimal comma, as spreadsheets in many languages do. A comma
+/// never separates thousands: `1,234` is 1.234 (refusing it would refuse `1234,567` too), and
+/// `1,234.5` is not a number.
 fn coordinate(v: &Value) -> Option<f64> {
     let n = match v {
         Value::Int(i) => *i as f64,
@@ -847,6 +856,8 @@ mod tests {
         }
         // The fields offered for coordinates: those holding numbers, as text or not.
         assert_eq!([0, 1, 2, 3].map(|i| holds_coordinates(&stops, i)), [false, true, true, false]);
+        // A single comma is the decimal separator, never one for thousands.
+        assert_eq!(["1,234", "1234,567", "1,234.5"].map(|t| coordinate(&Value::Text(t.into()))), [Some(1.234), Some(1234.567), None]);
         // Web Mercator metres: 10° east on the equator.
         let fields = vec![Field::new("e", FieldType::Double), Field::new("n", FieldType::Double)];
         let mut metres = Dataset::new("metres", GeometryType::None, fields);

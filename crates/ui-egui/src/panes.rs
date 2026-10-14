@@ -779,6 +779,9 @@ pub struct GpForm {
     pub values: HashMap<&'static str, String>,
     pub search: String,
     pub last: Option<(bool, Vec<String>)>,
+    /// The fields that can hold coordinates, for the project revision and the input they were
+    /// read from (telling them reads rows, too much to do every frame).
+    pub coordinate_fields: Option<(u64, String, Vec<String>)>,
     /// A GeoLibre runner install in progress (it runs on a background thread).
     pub install: Option<std::sync::Arc<std::sync::Mutex<Install>>>,
     /// The browser's GeoLibre tools loading.
@@ -1214,9 +1217,27 @@ fn geoprocessing(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                     ParamKind::CoordinateField => rustgis_engine::analysis::holds_coordinates(d, i),
                     _ => true,
                 };
-                let mut v: Vec<String> = ds
-                    .map(|d| d.fields.iter().enumerate().filter(|(i, f)| offered(d, *i, f)).map(|(_, f)| f.name.clone()).collect())
-                    .unwrap_or_default();
+                let fields = |d: &rustgis_engine::data::Dataset| -> Vec<String> {
+                    d.fields.iter().enumerate().filter(|(i, f)| offered(d, *i, f)).map(|(_, f)| f.name.clone()).collect()
+                };
+                // Telling which fields hold coordinates reads their rows, too much for every frame:
+                // the list is kept until the project or the input changes.
+                let coordinates = p.kind == ParamKind::CoordinateField;
+                let kept = match &app.gp.coordinate_fields {
+                    Some((rev, input, kept)) if coordinates && *rev == app.session.revision && *input == lname => Some(kept.clone()),
+                    _ => None,
+                };
+                let mut v: Vec<String> = match (ds, kept) {
+                    (None, _) => Vec::new(),
+                    (Some(_), Some(kept)) => kept,
+                    (Some(d), None) => {
+                        let v = fields(d);
+                        if coordinates {
+                            app.gp.coordinate_fields = Some((app.session.revision, lname.clone(), v.clone()));
+                        }
+                        v
+                    }
+                };
                 // A field picked for another layer, which this one doesn't have: unset.
                 if ds.is_some() && !cur.is_empty() && !v.iter().any(|f| f.eq_ignore_ascii_case(&cur)) {
                     app.gp.values.remove(p.name);
