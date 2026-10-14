@@ -214,6 +214,11 @@ fn num(p: &Json, k: &str) -> Option<f64> {
 }
 
 fn input<'a>(inp: &'a dyn Inputs, p: &Json, k: &str) -> Result<&'a Dataset, String> {
+    // A number is a standalone table's id, and only that; text is a name.
+    if let Some(n) = p.get(k).filter(|v| v.is_number()) {
+        let table = n.as_u64().and_then(|id| u32::try_from(id).ok()).and_then(|id| inp.table(id));
+        return table.ok_or_else(|| format!("no standalone table with id {n}"));
+    }
     let name = s(p, k);
     inp.dataset(name).ok_or_else(|| format!("no layer named '{name}'"))
 }

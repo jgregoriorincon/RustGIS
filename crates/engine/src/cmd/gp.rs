@@ -329,6 +329,9 @@ impl Inputs for MapInputs<'_> {
             // A table as commands find one: by its name, else (names can repeat) by its id.
             .or_else(|| crate::project::find_table(self.1, layer).and_then(|i| self.1.get(i)).map(|t| &t.dataset))
     }
+    fn table(&self, id: u32) -> Option<&Dataset> {
+        self.1.iter().find(|t| t.id == id).map(|t| &t.dataset)
+    }
     fn selection(&self, layer: &str) -> &[usize] {
         match self.0.layer_by_name(layer) {
             Some(l) if !l.selection.is_empty() => &l.selection,

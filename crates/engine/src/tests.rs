@@ -192,6 +192,17 @@ fn standalone_tables_keep_their_ids_in_the_project_file() {
         let out = s.project.tables.last().unwrap();
         assert_eq!(out.value(0, out.field_index("SUM_v").unwrap()), &rustgis_data::Value::Float(sum), "{input}");
     }
+    // A table named as another's id: the text finds it by its name, and a number is the id.
+    s.run("layer.addDataText", &json!({"fileName": format!("{}.csv", counts[1]), "text": "k,v\na,1\n"})).unwrap();
+    assert_eq!(s.project.tables.last().map(|t| t.name.clone()), Some(counts[1].to_string()));
+    for (input, sum) in [(json!(counts[1].to_string()), 1.0), (json!(counts[1]), 99.0)] {
+        s.run("gp.run", &json!({"tool": "summaryStatistics", "params": {"input": input, "field": "v"}})).unwrap();
+        let out = s.project.tables.last().unwrap();
+        assert_eq!(out.value(0, out.field_index("SUM_v").unwrap()), &rustgis_data::Value::Float(sum), "{input}");
+    }
+    for input in [json!(9999), json!(-1), json!(1.5)] {
+        assert!(s.run("gp.run", &json!({"tool": "summaryStatistics", "params": {"input": input, "field": "v"}})).is_err());
+    }
     let dir = std::env::temp_dir().join(format!("rustgis-table-ids-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("counts.csv");
