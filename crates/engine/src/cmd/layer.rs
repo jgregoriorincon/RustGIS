@@ -19,6 +19,9 @@ pub fn commands() -> Vec<C> {
         C::new("info.fileLayers", "List Layers in File", "Home › Add › Add Data", file_layers)
             .view()
             .params(r#"{"path": string}"#),
+        C::new("info.fileColumns", "List Columns in File", "Home › Add › Delimited Text", file_columns).view().params(
+            r#"{"path": "a delimited text file (CSV, TSV, TXT) or a spreadsheet", "delimiter"?: ","|";"|"\\t"|"|", "layer"?: "a spreadsheet's sheet (the first by default)"}"#,
+        ),
         C::new("layer.addSql", "Add Data From SQL", "Home › Add", add_sql).params(
             r#"{"sql": "one DuckDB SELECT; DuckDB Spatial's ST_ functions, read_parquet('…'), web addresses", "name"?: string, "database"?: "a .duckdb file or a PostgreSQL connection (postgres:host=… dbname=…) whose tables the query names", "password"?: "the connection's, kept for this session only", "crs"?: "EPSG:… of a geometry that doesn't say", "stream"?: bool, "ran"?: "a result the app ran (the SQL pane)"}"#,
         ),
@@ -1370,13 +1373,59 @@ pub(crate) fn csv_options(p: &Value) -> Result<Option<rustgis_data::io::CsvOptio
         return Ok(None);
     }
     let crs = crs.map(|c| rustgis_data::raster::Crs::parse(&c)).transpose()?;
-    let delimiter = match delimiter {
-        None => None,
-        Some("\\t" | "tab" | "\t") => Some(b'\t'),
-        Some(d) if d.len() == 1 && d.is_ascii() && !d.starts_with(['"', '\n', '\r']) => d.bytes().next(),
-        Some(d) => return Err(format!("delimiter '{d}': give one character, such as ; or \\t")),
-    };
+    let delimiter = parse_delimiter(delimiter)?;
     Ok(Some(rustgis_data::io::CsvOptions { x, y, wkt, crs, delimiter }))
+}
+
+/// A `delimiter` parameter: one character, or `\t`/`tab`.
+fn parse_delimiter(d: Option<&str>) -> Result<Option<u8>, String> {
+    match d {
+        None => Ok(None),
+        Some("\\t" | "tab" | "\t") => Ok(Some(b'\t')),
+        Some(d) if d.len() == 1 && d.is_ascii() && !d.starts_with(['"', '\n', '\r']) => Ok(d.bytes().next()),
+        Some(d) => Err(format!("delimiter '{d}': give one character, such as ; or \\t")),
+    }
+}
+
+fn file_columns(_s: &mut Session, p: &Value) -> CmdResult {
+    columns_in_file(s_req(p, "path")?, p)
+}
+
+/// `info.fileColumns` for the file at `path` (the desktop app's Add Delimited Text).
+pub fn columns_in_file(path: &str, p: &Value) -> CmdResult {
+    if !Path::new(path).is_file() {
+        return Err(format!("{path}: no such file"));
+    }
+    let meta = std::fs::metadata(path).map_err(|e| format!("{path}: {e}"))?;
+    if meta.len() > super::raster::MAX_UPLOAD_BYTES as u64 {
+        return Err(format!("{path} is too large to open"));
+    }
+    let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    columns_of(path, &bytes, p)
+}
+
+/// The columns of a delimited text file or a spreadsheet's sheet (`"layer"`), with the separator
+/// (`"delimiter"`, or the one found) and the x/y or WKT columns found by name:
+/// `{"columns", "x", "y", "wkt", "delimiter"}`. `info.fileColumns` for a file's bytes (the web
+/// app's Add Delimited Text).
+pub fn columns_of(name: &str, bytes: &[u8], p: &Value) -> CmdResult {
+    let err = |e: rustgis_data::DataError| format!("{name}: {e}");
+    let c = if rustgis_data::sheets::is_sheet_name(name) {
+        let sheet = ps(p, "layer").map(str::trim).filter(|l| !l.is_empty());
+        rustgis_data::sheets::columns(bytes, sheet).map_err(err)?
+    } else if is_delimited_name(name) {
+        let text = std::str::from_utf8(bytes).map_err(|_| format!("{name} is not UTF-8 text"))?;
+        rustgis_data::io::csv_columns(text, parse_delimiter(ps(p, "delimiter"))?).map_err(err)?
+    } else {
+        return Err(format!("{name}: not delimited text (CSV, TSV, TXT) or a spreadsheet"));
+    };
+    Ok(json!({
+        "columns": c.names,
+        "x": c.x,
+        "y": c.y,
+        "wkt": c.wkt,
+        "delimiter": c.delimiter.map(|d| char::from(d).to_string()),
+    }))
 }
 
 /// Whether a file name is delimited text (CSV, TSV, TXT).

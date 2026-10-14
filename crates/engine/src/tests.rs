@@ -3157,6 +3157,18 @@ fn spreadsheets_feeds_landxml_and_polylines() {
     let e = s.map().layer(r["layer"].as_u64().unwrap() as u32).unwrap().extent();
     assert!((e.min_x + 73.96).abs() < 0.05, "{e:?}");
     assert!(s.run("layer.addData", &json!({"path": p, "layer": "nope"})).is_err());
+    // Its columns, and a delimited file's, for Add Delimited Text.
+    let c = s.run("info.fileColumns", &json!({"path": p, "layer": "Survey"})).unwrap();
+    assert_eq!(c, json!({"columns": ["id", "E", "N"], "x": null, "y": null, "wkt": null, "delimiter": null}));
+    let csv = dir.join("stops.csv");
+    std::fs::write(&csv, "stop;Lon;Lat\nA;1;2\n").unwrap();
+    let csv = csv.display().to_string();
+    let c = s.run("info.fileColumns", &json!({"path": csv})).unwrap();
+    assert_eq!(c, json!({"columns": ["stop", "Lon", "Lat"], "x": "Lon", "y": "Lat", "wkt": null, "delimiter": ";"}));
+    let c = s.run("info.fileColumns", &json!({"path": csv, "delimiter": ","})).unwrap();
+    assert_eq!(c["columns"], json!(["stop;Lon;Lat"]));
+    assert!(s.run("info.fileColumns", &json!({"path": csv, "delimiter": ";;"})).is_err());
+    assert!(s.run("info.fileColumns", &json!({"path": dir.join("missing.csv").display().to_string()})).is_err());
     // A GeoRSS feed as plain .xml, by its contents.
     let feed = dir.join("quakes.xml");
     std::fs::write(&feed, r#"<rss xmlns:georss="http://www.georss.org/georss"><channel><item><title>Q</title><georss:point>45 -110</georss:point></item></channel></rss>"#).unwrap();
