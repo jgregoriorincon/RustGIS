@@ -1393,16 +1393,29 @@ fn file_columns(_s: &mut Session, p: &Value) -> CmdResult {
 
 /// `info.fileColumns` for the file at `path` (the desktop app's Add Delimited Text).
 pub fn columns_in_file(path: &str, p: &Value) -> CmdResult {
+    use std::io::Read;
     if !Path::new(path).is_file() {
         return Err(format!("{path}: no such file"));
     }
+    // Add Data's limits: a spreadsheet is read whole, delimited text within the text readers' limit.
+    let sheet = rustgis_data::sheets::is_sheet_name(path);
+    let limit = if sheet { super::raster::MAX_UPLOAD_BYTES as u64 } else { rustgis_data::io::MAX_BYTES };
     let meta = std::fs::metadata(path).map_err(|e| format!("{path}: {e}"))?;
-    if meta.len() > super::raster::MAX_UPLOAD_BYTES as u64 {
+    if meta.len() > limit {
         return Err(format!("{path} is too large to open"));
     }
-    let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    let mut bytes = Vec::new();
+    let read = if sheet {
+        std::fs::File::open(path).and_then(|mut f| f.read_to_end(&mut bytes))
+    } else {
+        std::fs::File::open(path).and_then(|f| f.take(COLUMNS_PREFIX as u64).read_to_end(&mut bytes))
+    };
+    read.map_err(|e| format!("{path}: {e}"))?;
     columns_of(path, &bytes, p)
 }
+
+/// What `info.fileColumns` reads of delimited text: its header and first rows, not all of it.
+const COLUMNS_PREFIX: usize = 8 << 20;
 
 /// The columns of a delimited text file or a spreadsheet's sheet (`"layer"`), with the separator
 /// (`"delimiter"`, or the one found) and the x/y or WKT columns found by name:
@@ -1414,7 +1427,13 @@ pub fn columns_of(name: &str, bytes: &[u8], p: &Value) -> CmdResult {
         let sheet = ps(p, "layer").map(str::trim).filter(|l| !l.is_empty());
         rustgis_data::sheets::columns(bytes, sheet).map_err(err)?
     } else if is_delimited_name(name) {
-        let text = std::str::from_utf8(bytes).map_err(|_| format!("{name} is not UTF-8 text"))?;
+        let bytes = bytes.get(..COLUMNS_PREFIX).unwrap_or(bytes);
+        let text = match std::str::from_utf8(bytes) {
+            Ok(text) => text,
+            // The part read may end inside a character.
+            Err(e) if e.error_len().is_none() => std::str::from_utf8(bytes.get(..e.valid_up_to()).unwrap_or_default()).unwrap_or_default(),
+            Err(_) => return Err(format!("{name} is not UTF-8 text")),
+        };
         rustgis_data::io::csv_columns(text, parse_delimiter(ps(p, "delimiter"))?).map_err(err)?
     } else {
         return Err(format!("{name}: not delimited text (CSV, TSV, TXT) or a spreadsheet"));

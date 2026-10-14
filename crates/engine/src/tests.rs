@@ -3169,6 +3169,11 @@ fn spreadsheets_feeds_landxml_and_polylines() {
     assert_eq!(c["columns"], json!(["stop;Lon;Lat"]));
     assert!(s.run("info.fileColumns", &json!({"path": csv, "delimiter": ";;"})).is_err());
     assert!(s.run("info.fileColumns", &json!({"path": dir.join("missing.csv").display().to_string()})).is_err());
+    // Only the start of delimited text is read: a character cut at its end isn't an error, bytes
+    // that aren't UTF-8 are.
+    let cut = crate::cmd::layer::columns_of("t.csv", b"lon,lat,name\n1,2,\xc3", &json!({})).unwrap();
+    assert_eq!(cut["x"], "lon");
+    assert!(crate::cmd::layer::columns_of("t.csv", b"lon,lat\n\xff,2\n", &json!({})).is_err());
     // A GeoRSS feed as plain .xml, by its contents.
     let feed = dir.join("quakes.xml");
     std::fs::write(&feed, r#"<rss xmlns:georss="http://www.georss.org/georss"><channel><item><title>Q</title><georss:point>45 -110</georss:point></item></channel></rss>"#).unwrap();
