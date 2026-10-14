@@ -937,6 +937,15 @@ fn layouts_compose_export_and_round_trip() {
     s.run("layout.addElement", &json!({"kind": "extentIndicator", "frame": inset, "of": frame})).unwrap();
     assert!(s.run("layout.addElement", &json!({"kind": "extentIndicator", "frame": inset, "of": inset})).is_err());
     assert!(s.run("layout.addElement", &json!({"kind": "sparkles"})).is_err());
+    // A hairline rule keeps its height when added and when edited (#211).
+    let rule = s.run("layout.addElement", &json!({"kind": "rectangle", "color": "#000000", "w": 136, "h": 0.15})).unwrap()["element"]
+        .as_u64()
+        .unwrap() as u32;
+    assert_eq!(s.project.layouts[0].element(rule).map(|e| e.h), Some(0.15));
+    s.run("layout.update", &json!({"element": rule, "h": 0.35})).unwrap();
+    assert_eq!(s.project.layouts[0].element(rule).map(|e| e.h), Some(0.35));
+    let err = s.run("layout.addElement", &json!({"kind": "rectangle", "h": 0})).unwrap_err();
+    assert!(err.contains("more than 0"), "{err}");
     // Frame zooms and edits.
     s.run("layout.frameZoom", &json!({"element": frame, "to": "layer", "layer": "Lakes"})).unwrap();
     s.run("layout.update", &json!({"element": frame, "x": 12, "w": 180, "center": [10, 50]})).unwrap();

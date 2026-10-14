@@ -14,6 +14,9 @@ pub const PT_PER_MM: f64 = 96.0 / 25.4;
 /// Metres of paper per logical point.
 pub const PAPER_M_PER_PT: f64 = 0.0254 / 96.0;
 
+/// The smallest element side, in mm: thin enough for a hairline rule (a 0.05 mm rectangle).
+pub const MIN_ELEMENT_MM: f64 = 0.05;
+
 /// The largest element id a layout keeps (imported ones above it are renumbered).
 const MAX_ID: u32 = 1_000_000;
 
@@ -243,8 +246,8 @@ impl Layout {
     pub fn add(&mut self, name: impl Into<String>, (x, y, w, h): (f64, f64, f64, f64), kind: ElementKind) -> u32 {
         let id = self.next_id.max(self.elements.iter().map(|e| e.id).max().unwrap_or(0).saturating_add(1));
         self.next_id = id.saturating_add(1);
-        // Templates on tiny pages can compute sizes below a millimetre.
-        let (w, h) = (finite_or(w, 1.0).clamp(1.0, 5000.0), finite_or(h, 1.0).clamp(1.0, 5000.0));
+        // Templates on tiny pages can compute sizes near zero.
+        let (w, h) = (finite_or(w, 1.0).clamp(MIN_ELEMENT_MM, 5000.0), finite_or(h, 1.0).clamp(MIN_ELEMENT_MM, 5000.0));
         self.elements.push(Element { id, name: name.into(), x, y, w, h, visible: true, kind });
         id
     }
@@ -300,8 +303,8 @@ impl Layout {
                 seen.insert(next);
                 next = next.saturating_add(1);
             }
-            e.w = finite_or(e.w, 20.0).clamp(1.0, 5000.0);
-            e.h = finite_or(e.h, 20.0).clamp(1.0, 5000.0);
+            e.w = finite_or(e.w, 20.0).clamp(MIN_ELEMENT_MM, 5000.0);
+            e.h = finite_or(e.h, 20.0).clamp(MIN_ELEMENT_MM, 5000.0);
             e.x = finite_or(e.x, 0.0).clamp(-5000.0, 5000.0);
             e.y = finite_or(e.y, 0.0).clamp(-5000.0, 5000.0);
             e.name = e.name.chars().take(200).collect();
@@ -465,6 +468,25 @@ mod tests {
             ElementKind::Rectangle { fill: Rgba::rgb(0, 0, 0), outline: Rgba::rgb(0, 0, 0), width: 1.0 },
         );
         assert!(a != big.elements[0].id && a <= MAX_ID + 1);
+    }
+
+    #[test]
+    fn hairline_rectangles_keep_their_height() {
+        let mut l = Layout::new("Layout", 210.0, 297.0);
+        let rule = ElementKind::Rectangle { fill: Rgba::rgb(0, 0, 0), outline: Rgba::rgb(0, 0, 0), width: 0.0 };
+        let id = l.add("Rule", (14.0, 33.0, 182.0, 0.15), rule.clone());
+        assert_eq!(l.element(id).map(|e| e.h), Some(0.15));
+        // A zero height becomes the thinnest element, not a 1 mm box.
+        let zero = l.add("Zero", (14.0, 40.0, 182.0, 0.0), rule);
+        assert_eq!(l.element(zero).map(|e| e.h), Some(MIN_ELEMENT_MM));
+        // So does a loaded one.
+        let text = r#"{"name":"x","width":210,"height":297,"elements":[
+            {"id":1,"name":"a","x":14,"y":33,"w":182,"h":0.15,"kind":{"Rectangle":{"fill":[0,0,0,255],"outline":[0,0,0,0],"width":0}}},
+            {"id":2,"name":"b","x":14,"y":40,"w":182,"h":0,"kind":{"Rectangle":{"fill":[0,0,0,0],"outline":[0,0,0,255],"width":0.4}}}]}"#;
+        let mut l: Layout = serde_json::from_str(text).unwrap();
+        l.clamp();
+        assert_eq!(l.element(1).map(|e| e.h), Some(0.15));
+        assert_eq!(l.element(2).map(|e| e.h), Some(MIN_ELEMENT_MM));
     }
 
     #[test]
