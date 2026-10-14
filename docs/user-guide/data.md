@@ -37,14 +37,14 @@ easting/northing or geometry, and EWKT's `SRID=`) and says when coordinates aren
 longitude/latitude. A CSV without coordinate columns, or a layer without geometry, opens as a
 standalone table, listed under the map in Layers; right-click it to open or remove it. Tables
 can share a name: commands and tools take a table's id (`info.project` lists them) as well as its
-name, which stands for the first table of that name. The Tools pane and Geocode Addresses send
-the id of the table picked; a tool's run keeps the table's name beside it (`input_name`). The
-**XY Table To Point** tool ([Geoprocessing](analysis.md)) makes points of a table already in the
-project, from two fields of coordinates and their coordinate system. In a text field a single
-comma is the decimal separator (`1,234` is 1.234); thousands separators are not read. **Home ›
-Add Data ›
-Graphics Layer** adds a layer for [drawn graphics](cartography.md#graphics), and **Insert ›
-Layer Templates** adds empty layers with ready-made schemas to draw into.
+name, which stands for the first table of that name. An id given as a number is never taken for
+a name. The Tools pane and Geocode Addresses send the id of the table picked; a tool's run keeps
+the table's name beside it (`input_name`). The **XY Table To Point** tool
+([Geoprocessing](analysis.md)) makes points of a table already in the project, from two fields of
+coordinates and their coordinate system. In a text field a single comma is the decimal separator
+(`1,234` is 1.234); thousands separators are not read.
+**Home › Add Data › Graphics Layer** adds a layer for [drawn graphics](cartography.md#graphics),
+and **Insert › Layer Templates** adds empty layers with ready-made schemas to draw into.
 
 Vector coordinates are WGS 84 longitude/latitude and are displayed in Web Mercator. GeoPackage,
 GeoParquet and FlatGeobuf files in another coordinate system (any EPSG code) are converted as they
