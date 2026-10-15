@@ -959,6 +959,41 @@ fn zooms_to_a_layer_follow_its_definition_query() {
 }
 
 #[test]
+fn symbology_classes_follow_the_definition_query() {
+    let mut s = world();
+    s.run("layer.definitionQuery", &json!({"layer": "Countries", "where": "continent = 'Europe'"})).unwrap();
+    let shown = |s: &Session, field: &str| -> Vec<rustgis_data::Value> {
+        let l = s.map().layer_by_name("Countries").unwrap();
+        let fi = l.dataset.field_index(field).unwrap();
+        l.visible_rows().iter().enumerate().filter(|(_, v)| **v).map(|(r, _)| l.dataset.value(r, fi).clone()).collect()
+    };
+    // The top class ends at the largest country drawn, not at China (#236).
+    s.run("layer.symbology", &json!({"layer": "Countries", "type": "graduated", "field": "pop_est", "classes": 5})).unwrap();
+    let top = shown(&s, "pop_est").iter().filter_map(|v| v.as_f64()).fold(f64::MIN, f64::max);
+    let rustgis_map::Renderer::Graduated { breaks, .. } = &s.map().layer_by_name("Countries").unwrap().renderer else {
+        panic!("graduated renderer expected")
+    };
+    assert_eq!(breaks.last().copied(), Some(top));
+    // Unique values list only the values drawn.
+    s.run("layer.symbology", &json!({"layer": "Countries", "type": "unique", "field": "income_grp"})).unwrap();
+    let mut drawn: Vec<String> = shown(&s, "income_grp").iter().map(|v| v.to_string()).collect();
+    drawn.sort();
+    drawn.dedup();
+    let rustgis_map::Renderer::Unique { classes, .. } = &s.map().layer_by_name("Countries").unwrap().renderer else {
+        panic!("unique renderer expected")
+    };
+    assert_eq!(classes.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>(), drawn);
+    // Classes are taken once: changing the query keeps them.
+    let before = s.map().layer_by_name("Countries").unwrap().renderer.clone();
+    s.run("layer.definitionQuery", &json!({"layer": "Countries", "where": ""})).unwrap();
+    assert_eq!(s.map().layer_by_name("Countries").unwrap().renderer, before);
+    // A query no country passes leaves nothing to class.
+    s.run("layer.definitionQuery", &json!({"layer": "Countries", "where": "continent = 'Atlantis'"})).unwrap();
+    let err = s.run("layer.symbology", &json!({"layer": "Countries", "type": "graduated", "field": "pop_est"})).unwrap_err();
+    assert!(err.contains("definition query"), "{err}");
+}
+
+#[test]
 fn layouts_compose_export_and_round_trip() {
     use base64::Engine;
     let dir = std::env::temp_dir().join(format!("rustgis-layout-{}", std::process::id()));

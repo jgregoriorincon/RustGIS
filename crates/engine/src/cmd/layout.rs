@@ -626,7 +626,7 @@ fn frame_zoom(s: &mut Session, p: &Value) -> CmdResult {
             }
         }
         "full" => {
-            let e = m.full_extent();
+            let e = m.shown_extent();
             set_frame(s, li, frame, &e)?;
         }
         "selection" => {

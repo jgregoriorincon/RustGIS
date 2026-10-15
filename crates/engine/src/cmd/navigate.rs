@@ -128,7 +128,7 @@ fn s_name(p: &Value) -> Result<&str, String> {
 }
 
 fn zoom_full(s: &mut Session, _: &Value) -> CmdResult {
-    let e = s.map().full_extent();
+    let e = s.map().shown_extent();
     let e = if e.is_empty() { Extent::new(-170.0, -58.0, 180.0, 78.0) } else { e };
     s.zoom_to(&e);
     Ok(Value::Null)

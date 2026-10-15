@@ -975,7 +975,7 @@ fn lidar_renderer(src: &dyn rustgis_data::source::FeatureSource, seed: u32) -> O
     base.stroke_width = 0.0;
     let classes = ds.field_index("classification").map(|i| ds.unique_values(i, 64).len()).unwrap_or(0);
     if classes >= 2 {
-        let mut r = Renderer::unique(&ds, "classification", Ramp::Harbour, base).ok()?;
+        let mut r = Renderer::unique(&ds, &[], "classification", Ramp::Harbour, base).ok()?;
         if let Renderer::Unique { classes, .. } = &mut r {
             for (value, sym) in classes.iter_mut() {
                 if let Some((_, [red, g, b_])) = ASPRS.iter().find(|(c, _)| value.parse::<i64>().ok() == Some(*c)) {
@@ -985,7 +985,7 @@ fn lidar_renderer(src: &dyn rustgis_data::source::FeatureSource, seed: u32) -> O
         }
         Some(r)
     } else {
-        Renderer::graduated(&ds, "z", 7, ClassMethod::Quantile, Ramp::Terrain, base).ok()
+        Renderer::graduated(&ds, &[], "z", 7, ClassMethod::Quantile, Ramp::Terrain, base).ok()
     }
 }
 
@@ -1814,15 +1814,26 @@ fn symbology(s: &mut Session, p: &Value) -> CmdResult {
             .or_else(|| l.dataset.fields.iter().find(|f| f.ty.is_numeric()).map(|f| f.name.clone()))
             .ok_or_else(|| "field is required".into())
     };
+    // Classes and sizes describe the rows the definition query lets through, taken once: changing
+    // the query later keeps them until the symbology is applied again.
+    let rows = || -> Result<Vec<bool>, String> {
+        let rows = l.visible_rows();
+        if !rows.is_empty() && !rows.contains(&true) {
+            return Err("no feature passes the definition query".into());
+        }
+        Ok(rows)
+    };
     let r = match kind.as_str() {
         "single" | "singlesymbol" => Renderer::Single(base),
-        "unique" | "uniquevalues" => Renderer::unique(&l.dataset, &field()?, ramp.unwrap_or(Ramp::Harbour), base)?,
-        "graduated" | "graduatedcolors" => Renderer::graduated(&l.dataset, &field()?, classes, method, ramp.unwrap_or(Ramp::Ember), base)?,
+        "unique" | "uniquevalues" => Renderer::unique(&l.dataset, &rows()?, &field()?, ramp.unwrap_or(Ramp::Harbour), base)?,
+        "graduated" | "graduatedcolors" => {
+            Renderer::graduated(&l.dataset, &rows()?, &field()?, classes, method, ramp.unwrap_or(Ramp::Ember), base)?
+        }
         "proportional" | "proportionalsymbols" => {
             if g != GeometryType::Point {
                 return Err("Proportional Symbols needs a point layer".into());
             }
-            Renderer::proportional(&l.dataset, &field()?, base)?
+            Renderer::proportional(&l.dataset, &rows()?, &field()?, base)?
         }
         other => return Err(format!("unknown symbology '{other}'")),
     };

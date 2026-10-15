@@ -765,6 +765,12 @@ impl Map {
         self.layers.iter().filter(|l| l.visible).fold(Extent::EMPTY, |e, l| e.union(&l.extent()))
     }
 
+    /// Union of the visible layers' shown extents (lon/lat): what Full Extent zooms to, narrowed by
+    /// each layer's definition query.
+    pub fn shown_extent(&self) -> Extent {
+        self.layers.iter().filter(|l| l.visible).fold(Extent::EMPTY, |e, l| e.union(&l.shown_extent()))
+    }
+
     pub fn selection_count(&self) -> usize {
         self.layers.iter().map(|l| l.selection.len()).sum()
     }
@@ -955,5 +961,9 @@ mod tests {
         // An invalid query hides nothing.
         l.definition_query = Some("n = = 2".into());
         assert_eq!(l.shown_extent(), Extent::new(0.0, 0.0, 10.0, 10.0));
+        // The map's shown extent (Full Extent) follows it too; its full extent doesn't.
+        m.layers[0].definition_query = Some("n = 2".into());
+        assert_eq!(m.shown_extent(), Extent::new(10.0, 10.0, 10.0, 10.0));
+        assert_eq!(m.full_extent(), Extent::new(0.0, 0.0, 10.0, 10.0));
     }
 }
