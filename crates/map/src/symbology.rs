@@ -1,7 +1,7 @@
 //! Symbols, renderers (single symbol, unique values, graduated colours, graduated symbols) and
 //! labeling. A renderer maps each feature to a [`Symbol`] and describes its legend.
 
-use rustgis_data::{Dataset, Feature, FieldType, GeometryType};
+use rustgis_data::{Dataset, FieldType, GeometryType};
 use serde::{Deserialize, Serialize};
 
 use crate::color::{Ramp, Rgba};
@@ -179,10 +179,7 @@ impl Renderer {
     /// counts, so `&[]` keeps them all).
     pub fn unique(ds: &Dataset, rows: &[bool], field: &str, ramp: Ramp, base: Symbol) -> Result<Renderer, String> {
         let fi = ds.field_index(field).ok_or_else(|| format!("no field named '{field}'"))?;
-        let mut vals: Vec<String> = kept(ds, rows).map(|f| f.attrs.get(fi).map(|x| x.to_string()).unwrap_or_default()).collect();
-        vals.sort();
-        vals.dedup();
-        vals.truncate(MAX_UNIQUE);
+        let vals = ds.unique_values(fi, rows, MAX_UNIQUE);
         let n = vals.len();
         let classes = vals.into_iter().enumerate().map(|(k, v)| (v, base.with_fill(ramp.pick(k, n), ds.geometry_type))).collect();
         let other = base.with_fill(Rgba::rgb(0xB0, 0xB0, 0xB0), ds.geometry_type);
@@ -204,7 +201,7 @@ impl Renderer {
         if !ds.fields.get(fi).is_some_and(|f| f.ty.is_numeric()) {
             return Err(format!("'{field}' is not a numeric field"));
         }
-        let mut vals: Vec<f64> = kept(ds, rows).filter_map(|f| f.attrs.get(fi).and_then(|v| v.as_f64())).collect();
+        let mut vals: Vec<f64> = ds.kept_features(rows).filter_map(|f| f.attrs.get(fi).and_then(|v| v.as_f64())).collect();
         if vals.is_empty() {
             return Err(format!("'{field}' has no numeric values"));
         }
@@ -224,10 +221,7 @@ impl Renderer {
         if !ds.fields.get(fi).is_some_and(|f| f.ty.is_numeric()) {
             return Err(format!("'{field}' is not a numeric field"));
         }
-        let (min, max) = kept(ds, rows)
-            .filter_map(|f| f.attrs.get(fi).and_then(|v| v.as_f64()))
-            .fold(None, |r: Option<(f64, f64)>, v| Some(r.map_or((v, v), |(lo, hi)| (lo.min(v), hi.max(v)))))
-            .ok_or_else(|| format!("'{field}' has no numeric values"))?;
+        let (min, max) = ds.numeric_range(fi, rows).ok_or_else(|| format!("'{field}' has no numeric values"))?;
         let mut base = base;
         if base.size == 0.0 {
             base.size = 6.0;
@@ -348,11 +342,6 @@ pub fn fmt_num(v: f64) -> String {
     } else {
         format!("{v:.2}")
     }
-}
-
-/// The features `rows` keeps; a row past its end counts.
-fn kept<'a>(ds: &'a Dataset, rows: &'a [bool]) -> impl Iterator<Item = &'a Feature> {
-    ds.features.iter().enumerate().filter(|(r, _)| rows.get(*r).copied().unwrap_or(true)).map(|(_, f)| f)
 }
 
 /// Upper class bounds for sorted values.

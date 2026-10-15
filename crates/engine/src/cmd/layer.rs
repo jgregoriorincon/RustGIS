@@ -973,7 +973,7 @@ fn lidar_renderer(src: &dyn rustgis_data::source::FeatureSource, seed: u32) -> O
     let mut base = rustgis_map::Symbol::default_for(GeometryType::Point, seed);
     base.size = 2.0;
     base.stroke_width = 0.0;
-    let classes = ds.field_index("classification").map(|i| ds.unique_values(i, 64).len()).unwrap_or(0);
+    let classes = ds.field_index("classification").map(|i| ds.unique_values(i, &[], 64).len()).unwrap_or(0);
     if classes >= 2 {
         let mut r = Renderer::unique(&ds, &[], "classification", Ramp::Harbour, base).ok()?;
         if let Renderer::Unique { classes, .. } = &mut r {
