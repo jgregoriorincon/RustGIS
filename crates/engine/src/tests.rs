@@ -935,6 +935,39 @@ fn graphics_draw_shapes_text_and_pictures() {
 }
 
 #[test]
+fn select_takes_only_drawn_features_of_selectable_layers() {
+    let mut s = world();
+    let selected = |s: &Session, layer: &str| s.map().layer_by_name(layer).map(|l| l.selection.clone()).unwrap_or_default();
+    // A display filter shows only South America: a box over the world selects only what's drawn (#243).
+    let filters = json!({"layer": "Countries", "filters": [{"name": "SA", "where": "continent = 'South America'"}]});
+    s.run("layer.displayFilters", &filters).unwrap();
+    let all = s.map().layer_by_name("Countries").unwrap().dataset.features.len();
+    let r = s.run("select.byRect", &json!({"minLon": -180, "minLat": -85, "maxLon": 180, "maxLat": 85})).unwrap();
+    let rows = selected(&s, "Countries");
+    assert!(!rows.is_empty() && rows.len() < all, "{} of {all}", rows.len());
+    let l = s.map().layer_by_name("Countries").unwrap();
+    let continent = l.dataset.field_index("continent").unwrap();
+    assert!(rows.iter().all(|r| l.dataset.value(*r, continent).to_string() == "South America"));
+    assert!(r["selected"].as_u64().unwrap() >= rows.len() as u64);
+    // A click on a hidden country selects nothing; on a drawn one, it.
+    let r = s.run("select.atPoint", &json!({"lon": 2.35, "lat": 46.6, "tolerancePx": 0})).unwrap();
+    assert!(r.is_null(), "{r}");
+    assert!(selected(&s, "Countries").is_empty());
+    s.run("select.atPoint", &json!({"lon": -51.0, "lat": -10.0, "tolerancePx": 0})).unwrap();
+    assert_eq!(selected(&s, "Countries").len(), 1);
+    // A layer that isn't selectable doesn't hide the selectable ones under it: Paris is in Cities,
+    // above France in Countries.
+    s.run("layer.displayFilters", &json!({"layer": "Countries", "filters": []})).unwrap();
+    let paris = json!({"lon": 2.35, "lat": 48.85, "tolerancePx": 5});
+    s.run("select.atPoint", &paris).unwrap();
+    assert_eq!(selected(&s, "Cities").len(), 1);
+    s.run("layer.selectable", &json!({"layer": "Cities", "on": false})).unwrap();
+    s.run("select.atPoint", &paris).unwrap();
+    assert!(selected(&s, "Cities").is_empty());
+    assert_eq!(selected(&s, "Countries").len(), 1);
+}
+
+#[test]
 fn zooms_to_a_layer_follow_its_definition_query() {
     let mut s = world();
     s.run("layer.definitionQuery", &json!({"layer": "Countries", "where": "continent = 'South America'"})).unwrap();

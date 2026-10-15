@@ -779,27 +779,10 @@ impl Map {
         }
     }
 
-    /// Topmost feature under a point in the camera's coordinates: (layer id, row).
-    pub fn hit(&mut self, p: Coord, tol: f64, scale: f64) -> Option<(u32, usize)> {
-        let (flat, key) = (self.flat(), self.projection.code());
-        for l in &mut self.layers {
-            if !l.visible || !l.in_scale_range(scale) {
-                continue;
-            }
-            let rows = l.visible_rows();
-            let id = l.id;
-            let proj = l.projected_in(&flat, &key);
-            // Last drawn is on top.
-            for (row, g) in proj.iter().enumerate().rev() {
-                if rows.get(row) == Some(&true)
-                    && let Some(g) = g
-                    && g.hit(p, tol)
-                {
-                    return Some((id, row));
-                }
-            }
-        }
-        None
+    /// The feature drawn on top under a point in the camera's coordinates, among the visible layers
+    /// `keep` accepts: (layer id, row). Draw order and the rows drawn are those of [`Map::hits_at`].
+    pub fn hit(&mut self, p: Coord, tol: f64, scale: f64, keep: impl Fn(&Layer) -> bool) -> Option<(u32, usize)> {
+        self.hits_at(p, tol, scale, keep, true, 1).into_iter().next()
     }
 
     /// Every feature under a point in the visible layers `keep` accepts: top layer first and, in
@@ -850,7 +833,8 @@ impl Map {
             if !l.visible || !l.selectable || !l.in_scale_range(scale) {
                 continue;
             }
-            let rows = l.visible_rows();
+            // Only features drawn: the definition query and the display filters let them through.
+            let rows = l.drawn_rows(scale);
             let id = l.id;
             let hits: Vec<usize> = l
                 .projected_in(&flat, &key)
@@ -888,7 +872,7 @@ mod tests {
         let id = m.add_dataset(points());
         assert_eq!(m.layers[0].id, id, "points go on top of polygons");
         let p = lonlat_to_merc(Coord::new(10.0, 10.0));
-        assert_eq!(m.hit(p, 1000.0, 1e6), Some((id, 1)));
+        assert_eq!(m.hit(p, 1000.0, 1e6, |_| true), Some((id, 1)));
         let e = Extent::from_points(lonlat_to_merc(Coord::new(-1.0, -1.0)), lonlat_to_merc(Coord::new(1.0, 1.0)));
         assert_eq!(m.hits_in(&e, 1e6), vec![(id, vec![0])]);
         m.layers[0].definition_query = Some("n = 2".into());
@@ -940,6 +924,32 @@ mod tests {
         // A filter that doesn't apply at this scale hides nothing.
         m.layers[0].display_filters = vec![filter(Some(1e5))];
         assert_eq!(m.hits_at(p, 1000.0, 1e6, |_| true, false, 100), vec![(id, 2), (id, 0)]);
+    }
+
+    #[test]
+    fn select_hits_skip_hidden_features_and_follow_draw_order() {
+        let mut m = Map::new("Map");
+        let mut d = points();
+        d.push(Some(Geometry::Point(Coord::new(0.0, 0.0))), vec![Value::Int(3)]);
+        let below = m.add_dataset(d);
+        let above = m.add_dataset(points());
+        let p = lonlat_to_merc(Coord::new(0.0, 0.0));
+        let e = Extent::from_points(lonlat_to_merc(Coord::new(-1.0, -1.0)), lonlat_to_merc(Coord::new(1.0, 1.0)));
+        let all = |_: &Layer| true;
+        assert_eq!(m.hit(p, 1000.0, 1e6, all), Some((above, 0)));
+        // A higher depth priority draws on top, whatever the order (#243).
+        m.layers.iter_mut().filter(|l| l.id == below).for_each(|l| l.priority = 1);
+        assert_eq!(m.hit(p, 1000.0, 1e6, all), Some((below, 2)));
+        m.layers.iter_mut().filter(|l| l.id == below).for_each(|l| l.priority = 0);
+        // Features a display filter hides are neither clicked nor boxed (#243).
+        let only = |w: &str| vec![effects::DisplayFilter { name: "f".into(), min_scale: None, max_scale: None, where_: w.into() }];
+        m.layers.iter_mut().filter(|l| l.id == above).for_each(|l| l.display_filters = only("n = 2"));
+        m.layers.iter_mut().filter(|l| l.id == below).for_each(|l| l.display_filters = only("n = 3"));
+        assert_eq!(m.hit(p, 1000.0, 1e6, all), Some((below, 2)));
+        assert_eq!(m.hits_in(&e, 1e6), vec![(below, vec![2])]);
+        // A layer the click doesn't take doesn't hide the ones below it.
+        m.layers.iter_mut().for_each(|l| l.display_filters.clear());
+        assert_eq!(m.hit(p, 1000.0, 1e6, |l| l.id != above), Some((below, 2)));
     }
 
     #[test]
