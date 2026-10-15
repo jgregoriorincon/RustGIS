@@ -1154,8 +1154,8 @@ fn popup(app: &mut RustGisApp, ui: &mut Ui, rect: Rect) {
     let info = if results > 1 { pp.info["results"][index].clone() } else { pp.info.clone() };
     let mut step: Option<usize> = None;
     let mut zoom = false;
-    // The feature shown, as its layer id and row.
-    let shown = info["layerId"].as_u64().zip(info["row"].as_u64());
+    // The feature shown, as its layer id and feature id (a raster pixel has neither).
+    let shown = info["layerId"].as_u64().and_then(|id| u32::try_from(id).ok()).zip(info["fid"].as_u64());
     let layer = info["layer"].as_str().unwrap_or("").to_string();
     let mut attrs = info["attributes"].as_object().cloned().unwrap_or_default();
     // A picture value (a photo's thumbnail) shows as the picture, not as its text.
@@ -1305,14 +1305,39 @@ fn popup(app: &mut RustGisApp, ui: &mut Ui, rect: Rect) {
     if let Some(l) = new_limit {
         ui.ctx().data_mut(|d| d.insert_temp(limit_id, l));
     }
-    if let (true, Some((id, row))) = (zoom, shown) {
-        let _ = app.session.run("select.rows", &json!({"layer": id, "rows": [row]}));
-        let _ = app.run("select.zoomTo", Value::Null);
+    // Zooms to the feature shown, found by its id, as Zoom To Selection does: the selection and
+    // the undo history are left as they are.
+    if let (true, Some((id, fid))) = (zoom, shown) {
+        let extent = app
+            .session
+            .map()
+            .layer(id)
+            .and_then(|l| l.dataset.features.iter().find(|f| f.id == fid))
+            .and_then(|f| f.geometry.as_ref())
+            .map(|g| g.extent());
+        if let Some(e) = extent.filter(|e| !e.is_empty()) {
+            app.session.zoom_to(&e);
+        }
     }
     if close {
         app.map.popup = None;
     } else if let (Some(i), Some(pp)) = (step, &mut app.map.popup) {
         pp.index = i;
+        // The feature shown is the one selected, as after the click. Not through `select.rows`:
+        // browsing a pop-up mustn't fill the undo history; the new revision redraws the map.
+        // Found again by its feature id: a streamed layer may have read another window since the
+        // click, moving the feature to another row (or out of the layer: then nothing is selected).
+        let shown = pp.info["results"].get(i).and_then(|r| Some((u32::try_from(r["layerId"].as_u64()?).ok()?, r["fid"].as_u64()?)));
+        let found = shown.and_then(|(id, fid)| {
+            let row = app.session.map().layer(id)?.dataset.features.iter().position(|f| f.id == fid)?;
+            Some((id, row))
+        });
+        if let Some((id, row)) = found {
+            rustgis_engine::cmd::select::set(&mut app.session, id, vec![row], rustgis_engine::cmd::select::Mode::New);
+        } else {
+            app.session.map_mut().clear_selection();
+        }
+        app.session.revision = app.session.revision.wrapping_add(1);
     }
 }
 

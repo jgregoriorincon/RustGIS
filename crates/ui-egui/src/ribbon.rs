@@ -1374,16 +1374,18 @@ fn view_tab(app: &mut RustGisApp, ui: &mut Ui) {
         });
         col(ui, |ui| {
             small(ui, app, "globe_view", "Global", "A globe scene.", "map.viewMode", json!({"mode": "global"}), on);
-            small(
-                ui,
-                app,
-                "map",
-                "Local",
-                "A flat scene centred on the view (azimuthal equidistant).",
-                "map.viewMode",
-                json!({"mode": "local"}),
-                local,
-            );
+            if rustgis_engine::map::projection::local_views_supported() {
+                small(
+                    ui,
+                    app,
+                    "map",
+                    "Local",
+                    "A flat scene centred on the view (azimuthal equidistant).",
+                    "map.viewMode",
+                    json!({"mode": "local"}),
+                    local,
+                );
+            }
         });
     });
     let v = app.session.map().view.clone();

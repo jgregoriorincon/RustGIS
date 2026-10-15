@@ -32,6 +32,14 @@ pub const PRESETS: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// Whether local views (`local:lon,lat`, azimuthal equidistant) can be drawn in this build. They
+/// need proj4rs' `aeqd`, which the browser build leaves out (Cargo.toml); asking the projection
+/// itself, rather than the target, keeps the command, the ribbon and the tests in step with it.
+pub fn local_views_supported() -> bool {
+    static SUPPORTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SUPPORTED.get_or_init(|| Projector::new("local:0,0").is_ok())
+}
+
 /// The PROJ definition and label of a projection code: a preset id or `EPSG:<code>`.
 pub fn lookup(code: &str) -> Result<(String, String), String> {
     let code = code.trim();
@@ -155,6 +163,11 @@ impl std::fmt::Debug for Projector {
 const LIMIT: f64 = 4.0e7;
 
 impl Projector {
+    /// The projector for a code `lookup` accepts: a preset id or name, `EPSG:<n>` or
+    /// `local:lon,lat`. World projections proj4rs lacks are computed here; the rest go to
+    /// proj4rs. Fails when the code is unknown, or when its method can't be computed (its
+    /// `+proj=` name is in the message), so a map is never drawn in another projection than the
+    /// one it names.
     pub fn new(code: &str) -> Result<Projector, String> {
         let (def, _) = lookup(code)?;
         let code_t = code.trim();
@@ -169,7 +182,11 @@ impl Projector {
             let lon0 = if f64::is_finite(lon0) { lon0 } else { 0.0 };
             return Ok(Projector { engine: Engine::World(crate::world::World { kind, lon0 }), to_meter: 1.0, domain });
         }
-        let native = proj4rs::Proj::from_proj_string(&def).map_err(|e| format!("{code}: {e}"))?;
+        let native = proj4rs::Proj::from_proj_string(&def).map_err(|e| match e {
+            // A known code whose method isn't implemented (EPSG:5880's +proj=poly, say): name it.
+            proj4rs::errors::Error::ProjectionNotFound => format!("{code}: its projection method (+proj={proj}) isn't supported"),
+            e => format!("{code}: {e}"),
+        })?;
         let wgs84 = proj4rs::Proj::from_proj_string("+proj=longlat +datum=WGS84 +no_defs").map_err(|e| e.to_string())?;
         let to_meter = native.to_meter();
         let engine = Engine::Proj { native: Box::new(native), wgs84: Box::new(wgs84) };
@@ -372,6 +389,46 @@ mod tests {
         // Equal Earth by its EPSG code goes to the built-in engine too.
         let ee = Projector::new("EPSG:8857").unwrap();
         assert!(format!("{ee:?}").contains("eqearth"));
+    }
+
+    #[test]
+    fn codes_whose_method_cannot_be_drawn_are_refused() {
+        // EPSG:5880 (SIRGAS 2000 / Brazil Polyconic) is in the EPSG table, but its method
+        // (+proj=poly) has no implementation: refuse it rather than accept it and draw the map
+        // in Web Mercator while naming EPSG:5880 (opengeos/RustGIS#208).
+        assert!(lookup("EPSG:5880").is_ok(), "the code itself is known");
+        let e = Projector::new("EPSG:5880").unwrap_err();
+        assert!(e.contains("EPSG:5880") && e.contains("poly"), "{e}");
+        let e = crate::Projection::from_code("EPSG:5880").unwrap_err();
+        assert!(e.contains("poly"), "{e}");
+        // Codes that can be drawn are still accepted, by number or preset.
+        for ok in ["EPSG:3035", "epsg:32633", "EPSG:8858", "equalEarth", "usaAlbers", "mercator", "globe"] {
+            crate::Projection::from_code(ok).unwrap_or_else(|e| panic!("{ok}: {e}"));
+        }
+        // Local views are accepted exactly where they can be drawn (`aeqd` is native-only, Cargo.toml).
+        let local = crate::Projection::from_code("local:12.5,41.9");
+        assert_eq!(local.is_ok(), local_views_supported(), "{local:?}");
+        // Pinned to the target on purpose, so the probe can't drift from the Cargo.toml split unnoticed.
+        assert_eq!(local_views_supported(), !cfg!(target_arch = "wasm32"), "aeqd on native targets only");
+    }
+
+    #[test]
+    fn local_views_are_azimuthal_equidistant() {
+        if !local_views_supported() {
+            return; // the browser build (see codes_whose_method_cannot_be_drawn_are_refused)
+        }
+        // map.viewMode "local" relies on +proj=aeqd: it must build (not fall back to Web Mercator)
+        // and keep true distances from its centre.
+        let p = Projector::new("local:12.5,41.9").unwrap_or_else(|e| panic!("{e}"));
+        let o = p.forward(Coord::new(12.5, 41.9)).unwrap();
+        assert!(o.x.abs() < 1e-6 && o.y.abs() < 1e-6, "the centre is the origin: {o:?}");
+        let c = Coord::new(13.5, 42.4);
+        let m = p.forward(c).unwrap();
+        let back = p.inverse(m).unwrap();
+        assert!((back.x - c.x).abs() < 1e-7 && (back.y - c.y).abs() < 1e-7, "{back:?}");
+        // Distance from the centre on the map is the WGS84 geodesic distance (Vincenty: 99 580.4 m).
+        let d = (m.x * m.x + m.y * m.y).sqrt();
+        assert!((d - 99_580.4).abs() < 1.0, "{d}");
     }
 
     #[test]

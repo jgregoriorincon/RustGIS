@@ -1,6 +1,7 @@
 # nl interface catalog: English<TAB>translation
  by 	 door
 (b4-b3)/(b4+b3)	(b4-b3)/(b4+b3)
+(filtered)	(gefilterd)
 00:00 UTC	00:00 UTC
 06:00 UTC	06:00 UTC
 12:00 UTC	12:00 UTC
@@ -777,6 +778,7 @@ Import Thumbnail	Miniatuur importeren
 Import Web Tool	Webtool importeren
 In Beyond	Ingezoomd voorbij
 In Progress	Bezig
+In RustGIS, it can:	In RustGIS kan hij:
 in progress	bezig
 In project	In project
 In use	In gebruik
@@ -805,6 +807,7 @@ Installed	Geïnstalleerd
 Installed plugins are kept in {folder}	Geïnstalleerde plugins worden bewaard in {folder}
 Installed with Homebrew, winget, the AUR or COPR? Update it there.	Geïnstalleerd met Homebrew, winget, de AUR of COPR? Werk het daar bij.
 Installed {name} {version}. Find it on the Plugins tab; its tools are also in the Tools pane.	{name} {version} geïnstalleerd. Je vindt de plugin op het tabblad Plugins; de gereedschappen staan ook in het gereedschappenvenster.
+Installing it downloads Python {version} and the packages it needs from the internet.	Bij het installeren worden Python {version} en de benodigde pakketten van internet gedownload.
 Interface font: {font}	Interfacelettertype: {font}
 Interpolate a surface from points (IDW)	Een oppervlak interpoleren uit punten (IDW)
 Invalid: {error}	Ongeldig: {error}
@@ -812,6 +815,7 @@ Invert	Omkeren
 Invert color scheme	Kleurenschema omkeren
 Invert the selection.	De selectie omkeren.
 IS NULL	IS NULL
+It runs: {program}	Hij voert uit: {program}
 it connects to an address on the internet	het maakt verbinding met een adres op internet
 it is reserved to you (plugins, scripts, tasks, models and the GeoLibre runner)	het is aan jou voorbehouden (plugins, scripts, taken, modellen en de GeoLibre-runner)
 it reads or writes files on this computer	het leest of schrijft bestanden op deze computer
@@ -1070,6 +1074,7 @@ None. Add one by address, or from a basemap plugin.	Geen. Voeg er een toe via ee
 North	Noord
 North\nArrow	Noord-\npijl
 North Polar Stereographic	Polair stereografisch noord
+Not sandboxed	Niet in sandbox
 not a RustGIS layout	geen RustGIS-lay-out
 not needed	niet nodig
 Not saved yet	Nog niet opgeslagen
@@ -1201,6 +1206,7 @@ PMTiles archive	PMTiles-archief
 PMTiles File…	PMTiles-bestand…
 PNG frames (zip)	PNG-frames (zip)
 PNG image	PNG-afbeelding
+Plugins marked Not sandboxed run as programs on your computer instead, and can do anything you can.	Plugins met het label 'Niet in sandbox' draaien in plaats daarvan als programma's op je computer en kunnen alles wat jij kunt.
 Point	Punt
 Points	Punten
 points each	punten elk
@@ -1211,6 +1217,7 @@ Polygon (draw)	Polygoon (tekenen)
 Polygons	Polygonen
 Polyline	Polylijn
 Pop-up Mode	Pop-upmodus
+Prepare	Voorbereiden
 pop_max > 1000000	pop_max > 1000000
 Populated Places	Bewoonde plaatsen
 Portal	Portal
@@ -1218,6 +1225,7 @@ Portrait	Staand
 Postprocessing	Nabewerking
 power 2	macht 2
 Prepare every layer's geometry for this projection.	De geometrie van elke laag voorbereiden voor deze projectie.
+Preparing its Python environment…	Python-omgeving wordt voorbereid…
 Presentation	Presentatie
 Presentation File	Presentatiebestand
 Presentation Pane	Presentatievenster
@@ -1256,6 +1264,9 @@ Proximity	Nabijheid
 Publish	Publiceren
 Publish › Output	Publiceren › Uitvoer
 Put the layer back as it was then	De laag terugzetten zoals ze toen was
+Python environment failed: {error}	Python-omgeving mislukt: {error}
+Python environment not prepared	Python-omgeving niet voorbereid
+Python environment ready	Python-omgeving gereed
 Quantile	Kwantiel
 Quick\nAccess	Snelle\ntoegang
 Quick Access Toolbar	Werkbalk Snelle toegang
@@ -1640,6 +1651,7 @@ Text	Tekst
 Text Symbol	Tekstsymbool
 The assistant is busy; stop it or wait for it to finish.	De assistent is bezig; stop hem of wacht tot hij klaar is.
 The assistant wants to run this, and {why}:	De assistent wil het volgende uitvoeren, en {why}:
+This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	Deze plugin draait als programma op je computer, buiten de sandbox van RustGIS. Hij kan alles wat jij kunt: je bestanden lezen en wijzigen, het netwerk gebruiken en andere programma's starten. Installeer hem alleen als je de maker vertrouwt.
 the capture failed unexpectedly	het vastleggen is onverwacht mislukt
 the Help tab always shows	het tabblad Help wordt altijd getoond
 The job covers the map view	De job beslaat de kaartweergave
@@ -1853,6 +1865,8 @@ Zoom to the whole world.	Zoomen naar de hele wereld.
 Zoom to Tokyo	Zoomen naar Tokio
 Zoom To World	Zoomen naar wereld
 {id} changed since it was installed; install it again from the Plugin Manager.	{id} is gewijzigd sinds de installatie; installeer het opnieuw via Pluginbeheer.
+{name} is larger than {mb} MB	{name} is groter dan {mb} MB
+{name} runs as a program on your computer: it needs the desktop app or rustgis-cli.	{name} draait als programma op je computer: daarvoor is de desktopapp of rustgis-cli nodig.
 {name} was withdrawn from the plugin registry and has been turned off.	{name} is uit het pluginregister teruggetrokken en is uitgeschakeld.
 {name} was withdrawn from the plugin registry: {reason}	{name} is uit het pluginregister teruggetrokken: {reason}
 {name}: the download doesn't match the registry; it wasn't installed.	{name}: de download komt niet overeen met het register; de plugin is niet geïnstalleerd.

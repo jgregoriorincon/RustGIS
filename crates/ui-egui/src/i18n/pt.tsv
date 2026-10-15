@@ -1,6 +1,7 @@
 # pt interface catalog: English<TAB>translation
  by 	 por
 (b4-b3)/(b4+b3)	(b4-b3)/(b4+b3)
+(filtered)	(filtrada)
 00:00 UTC	00:00 UTC
 06:00 UTC	06:00 UTC
 12:00 UTC	12:00 UTC
@@ -777,6 +778,7 @@ Import Thumbnail	Importar miniatura
 Import Web Tool	Importar ferramenta web
 In Beyond	Limite ao aproximar
 In Progress	Em andamento
+In RustGIS, it can:	No RustGIS, ele pode:
 in progress	em andamento
 In project	No projeto
 In use	Em uso
@@ -805,6 +807,7 @@ Installed	Instalado
 Installed plugins are kept in {folder}	Os plugins instalados ficam em {folder}
 Installed with Homebrew, winget, the AUR or COPR? Update it there.	Instalou com Homebrew, winget, AUR ou COPR? Atualize por lá.
 Installed {name} {version}. Find it on the Plugins tab; its tools are also in the Tools pane.	{name} {version} instalado. Você o encontra na guia Plugins; as ferramentas dele também estão no painel Ferramentas.
+Installing it downloads Python {version} and the packages it needs from the internet.	A instalação baixa da internet o Python {version} e os pacotes de que ele precisa.
 Interface font: {font}	Fonte da interface: {font}
 Interpolate a surface from points (IDW)	Interpolar uma superfície a partir de pontos (IDW)
 Invalid: {error}	Inválida: {error}
@@ -812,6 +815,7 @@ Invert	Inverter
 Invert color scheme	Inverter esquema de cores
 Invert the selection.	Inverter a seleção.
 IS NULL	IS NULL
+It runs: {program}	Ele executa: {program}
 it connects to an address on the internet	conecta-se a um endereço na internet
 it is reserved to you (plugins, scripts, tasks, models and the GeoLibre runner)	é reservado a você (plugins, scripts, tarefas, modelos e o executor do GeoLibre)
 it reads or writes files on this computer	lê ou grava arquivos neste computador
@@ -1070,6 +1074,7 @@ None. Add one by address, or from a basemap plugin.	Nenhuma. Adicione uma pelo e
 North	Norte
 North\nArrow	Seta de\nnorte
 North Polar Stereographic	Estereográfica polar norte
+Not sandboxed	Fora da sandbox
 not a RustGIS layout	não é um layout do RustGIS
 not needed	não é necessária
 Not saved yet	Ainda não salvo
@@ -1201,6 +1206,7 @@ PMTiles archive	Arquivo PMTiles
 PMTiles File…	Arquivo PMTiles…
 PNG frames (zip)	Quadros PNG (zip)
 PNG image	Imagem PNG
+Plugins marked Not sandboxed run as programs on your computer instead, and can do anything you can.	Plugins marcados como "Fora da sandbox" são executados como programas no seu computador e podem fazer tudo o que você pode.
 Point	Ponto
 Points	Pontos
 points each	pontos cada
@@ -1211,6 +1217,7 @@ Polygon (draw)	Polígono (desenhar)
 Polygons	Polígonos
 Polyline	Polilinha
 Pop-up Mode	Modo de pop-up
+Prepare	Preparar
 pop_max > 1000000	pop_max > 1000000
 Populated Places	Locais povoados
 Portal	Portal
@@ -1218,6 +1225,7 @@ Portrait	Retrato
 Postprocessing	Pós-processamento
 power 2	potência 2
 Prepare every layer's geometry for this projection.	Preparar a geometria de todas as camadas para esta projeção.
+Preparing its Python environment…	Preparando o ambiente Python…
 Presentation	Apresentação
 Presentation File	Arquivo de apresentação
 Presentation Pane	Painel Apresentação
@@ -1256,6 +1264,9 @@ Proximity	Proximidade
 Publish	Publicar
 Publish › Output	Publicar › Saída
 Put the layer back as it was then	Restaurar a camada como estava naquele momento
+Python environment failed: {error}	Falha no ambiente Python: {error}
+Python environment not prepared	Ambiente Python não preparado
+Python environment ready	Ambiente Python pronto
 Quantile	Quantil
 Quick\nAccess	Acesso\nrápido
 Quick Access Toolbar	Barra de ferramentas de acesso rápido
@@ -1640,6 +1651,7 @@ Text	Texto
 Text Symbol	Símbolo de texto
 The assistant is busy; stop it or wait for it to finish.	O assistente está ocupado; interrompa-o ou aguarde até que termine.
 The assistant wants to run this, and {why}:	O assistente quer executar o seguinte, e {why}:
+This plugin runs as a program on your computer, outside RustGIS's sandbox. It can do anything you can: read and change your files, use the network and run other programs. Install it only if you trust its author.	Este plugin é executado como um programa no seu computador, fora da sandbox do RustGIS. Ele pode fazer tudo o que você pode: ler e alterar seus arquivos, usar a rede e executar outros programas. Instale-o somente se confiar no autor.
 the capture failed unexpectedly	a captura falhou inesperadamente
 the Help tab always shows	a guia Ajuda é sempre mostrada
 The job covers the map view	O trabalho abrange a visualização do mapa
@@ -1853,6 +1865,8 @@ Zoom to the whole world.	Zoom para o mundo inteiro.
 Zoom to Tokyo	Aproximar de Tóquio
 Zoom To World	Zoom para o mundo
 {id} changed since it was installed; install it again from the Plugin Manager.	{id} mudou desde que foi instalado; instale-o novamente pelo Gerenciador de plugins.
+{name} is larger than {mb} MB	{name} tem mais de {mb} MB
+{name} runs as a program on your computer: it needs the desktop app or rustgis-cli.	{name} é executado como um programa no seu computador: requer o aplicativo desktop ou o rustgis-cli.
 {name} was withdrawn from the plugin registry and has been turned off.	{name} foi retirado do registro de plugins e foi desativado.
 {name} was withdrawn from the plugin registry: {reason}	{name} foi retirado do registro de plugins: {reason}
 {name}: the download doesn't match the registry; it wasn't installed.	{name}: o download não corresponde ao registro; não foi instalado.
