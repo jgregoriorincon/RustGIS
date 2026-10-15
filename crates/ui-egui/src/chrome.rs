@@ -409,7 +409,10 @@ pub fn command_search(app: &mut RustGisApp, ctx: &egui::Context) {
         let show_loc = width >= 400.0;
         // A solid scroll bar takes its own gutter instead of floating over the locations.
         ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
-        egui::ScrollArea::vertical().max_height(list_h).show(ui, |ui| {
+        // The modal's area starts from its last size, so after a short result list the scroll
+        // area would get only that room back (egui's 64 px floor): ask for the full height
+        // whenever the list scrolls. A few hits still shrink the palette to fit.
+        egui::ScrollArea::vertical().max_height(list_h).min_scrolled_height(list_h).show(ui, |ui| {
             let row_w = ui.available_width();
             // Enter runs the first command that is available now.
             let mut first = true;
