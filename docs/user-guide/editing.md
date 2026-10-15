@@ -52,4 +52,4 @@ the selected layer's data source path.
 
 Pop-ups (Home › Navigate) choose what a click with Explore identifies: the topmost feature, every
 visible layer's feature (step through them with ‹ ›), only selectable layers, only the layer
-selected in Layers, or nothing.
+selected in Layers, or nothing. The magnifier in the pop-up's header zooms to the feature shown.
