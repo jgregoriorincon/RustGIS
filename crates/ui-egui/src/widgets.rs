@@ -361,3 +361,44 @@ pub fn icon_button(ui: &mut Ui, icon: &str, hover: &str) -> Response {
     icons::paint(ui.painter(), r.shrink(5.0), icon, t.text, t.accent);
     resp.on_hover_text(hover)
 }
+
+/// A search field, laid out like Command Search's (#337): the search icon, a frameless text box
+/// with `hint` and, once it holds text, a ✕ that clears it, across the width it is given (the
+/// caller adds margins and any separator). Escape clears the text, and on an empty box lets go
+/// of the focus. Returns the text box's response, marked changed when the ✕ or Escape clear it.
+pub fn search_field(ui: &mut Ui, text: &mut String, hint: &str) -> Response {
+    let t = Tokens::get(ui.ctx());
+    ui.horizontal(|ui| {
+        let (r, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
+        icons::paint(ui.painter(), r, "search", t.text_dim, t.accent);
+        let clear = !text.is_empty();
+        let room = ui.available_width() - if clear { 22.0 + ui.spacing().item_spacing.x } else { 0.0 };
+        // The box keeps Escape (egui would drop its focus on it before the global shortcuts ran,
+        // which then take the key): Escape clears the text, and on an empty box lets go.
+        let keys = egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, escape: true, ..Default::default() };
+        let edit = egui::TextEdit::singleline(text).hint_text(hint).frame(egui::Frame::NONE);
+        let mut edit = ui.add(edit.desired_width(room).event_filter(keys));
+        if edit.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if text.is_empty() {
+                edit.surrender_focus();
+            } else {
+                text.clear();
+                edit.mark_changed();
+            }
+        }
+        if clear {
+            let (r, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Clear")));
+            if resp.hovered() {
+                ui.painter().rect_filled(r, CornerRadius::same(5), t.hover);
+            }
+            icons::paint(ui.painter(), r.shrink(5.0), "close", t.text_dim, t.accent);
+            if resp.on_hover_text(tl!("Clear")).clicked() {
+                text.clear();
+                edit.mark_changed();
+            }
+        }
+        edit
+    })
+    .inner
+}

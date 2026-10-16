@@ -279,7 +279,7 @@ fn contents(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
     // The name filter (#300), above the list so it stays in view.
     let map_name = app.session.map().name.clone();
     ui.add_space(8.0);
-    filter_box(app, ui, t);
+    filter_box(app, ui);
     // (Which layer is active as the filter changes: `follow_layer_filter`, every frame.)
     let q = filter_query(&app.ui.layer_filter);
     let filtering = !q.is_empty();
@@ -390,38 +390,11 @@ fn contents(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
     });
 }
 
-/// The Layers pane's filter box, laid out like Command Search's (`chrome::command_search`): the
-/// search icon, a frameless text box and, once it holds text, a ✕, over a separator.
-fn filter_box(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
-    ui.horizontal(|ui| {
-        ui.add_space(10.0);
-        let (r, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
-        icons::paint(ui.painter(), r, "search", t.text_dim, t.accent);
-        let clear = !app.ui.layer_filter.is_empty();
-        // Room for the ✕ (22 px) and the pane's right margin.
-        let room = ui.available_width() - if clear { 22.0 + ui.spacing().item_spacing.x + 10.0 } else { 10.0 };
-        // The box keeps Escape (egui would drop its focus on it before the global shortcuts ran,
-        // which then take the key): Escape clears the text, and on an empty box lets go.
-        let keys = egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, escape: true, ..Default::default() };
-        let edit = egui::TextEdit::singleline(&mut app.ui.layer_filter).hint_text(tl!("Filter layers")).frame(egui::Frame::NONE);
-        let edit = ui.add(edit.desired_width(room).event_filter(keys));
-        if edit.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            if app.ui.layer_filter.is_empty() {
-                edit.surrender_focus();
-            }
-            app.ui.layer_filter.clear();
-        }
-        if clear {
-            let (r, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Clear")));
-            if resp.hovered() {
-                ui.painter().rect_filled(r, CornerRadius::same(5), t.hover);
-            }
-            icons::paint(ui.painter(), r.shrink(5.0), "close", t.text_dim, t.accent);
-            if resp.on_hover_text(tl!("Clear")).clicked() {
-                app.ui.layer_filter.clear();
-            }
-        }
+/// The Layers pane's filter box: the shared search field (#337) within the pane's 10 px margins,
+/// over a separator.
+fn filter_box(app: &mut RustGisApp, ui: &mut Ui) {
+    egui::Frame::NONE.inner_margin(egui::Margin::symmetric(10, 0)).show(ui, |ui| {
+        crate::widgets::search_field(ui, &mut app.ui.layer_filter, tl!("Filter layers"));
     });
     ui.separator();
 }
@@ -1564,12 +1537,9 @@ fn geolibre_web_card(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
 fn geoprocessing(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
     let Some(spec) = app.gp.tool.and_then(rustgis_engine::analysis::tool) else {
         // Tool finder.
-        ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
-            icons::paint(ui.painter(), r, "search", t.text_dim, t.accent);
-            ui.add(egui::TextEdit::singleline(&mut app.gp.search).hint_text(tl!("Find Tools")).desired_width(f32::INFINITY));
-        });
-        ui.add_space(8.0);
+        crate::widgets::search_field(ui, &mut app.gp.search, tl!("Find Tools"));
+        ui.separator();
+        ui.add_space(4.0);
         let q = app.gp.search.to_lowercase();
         let matches = |x: &rustgis_engine::analysis::ToolSpec| {
             q.is_empty() || x.name.to_lowercase().contains(&q) || x.summary.to_lowercase().contains(&q) || x.id.to_lowercase().contains(&q)
