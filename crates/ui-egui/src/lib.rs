@@ -285,6 +285,9 @@ pub struct UiState {
     /// starts unfiltered. Not saved.
     pub layer_filter: String,
     pub layer_filter_map: String,
+    /// The active layer the filter hid (so it stopped being active), selected again once the
+    /// filter shows it, unless another layer was picked meanwhile.
+    pub layer_filter_hid: Option<u32>,
     /// The command an item picked in the browser opens with (web).
     pub pending_open: Option<&'static str>,
     /// The file the project was last saved or opened as (web), which Save downloads again.
@@ -397,6 +400,7 @@ impl Default for UiState {
             pane_sets: Vec::new(),
             layer_filter: String::new(),
             layer_filter_map: String::new(),
+            layer_filter_hid: None,
         }
     }
 }
@@ -2328,7 +2332,7 @@ impl RustGisApp {
         i18n::set_current(self.lang());
         let t = theme::Tokens::get(&ctx);
         chrome::shortcuts(self, &ctx);
-        panes::follow_active_map(self);
+        panes::follow_layer_filter(self);
         if self.ui.backstage {
             backstage::show(self, ui);
         } else {

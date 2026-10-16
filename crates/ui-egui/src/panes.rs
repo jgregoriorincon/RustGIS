@@ -230,14 +230,49 @@ pub fn patch(p: &egui::Painter, r: Rect, s: &Symbol, g: GeometryType) {
     }
 }
 
-/// Clears the Layers pane's filter (#300) when another map comes into view. Run every frame,
-/// whichever pane (if any) is open, so a map visited while Layers was hidden still counts.
-pub fn follow_active_map(app: &mut RustGisApp) {
+/// Keeps the session in step with the Layers pane's filter (#300): clears it when another map
+/// comes into view, and keeps the active layer one the filter shows. Run every frame, whichever
+/// pane (if any) is open, so a map visited or a layer renamed while Layers was hidden counts.
+pub fn follow_layer_filter(app: &mut RustGisApp) {
     let map = &app.session.map().name;
     if app.ui.layer_filter_map != *map {
         app.ui.layer_filter.clear();
         app.ui.layer_filter_map.clone_from(map);
+        app.ui.layer_filter_hid = None;
     }
+    // The active layer follows the filter: one it hides stops being active (the Style and Data
+    // tabs never act on a layer out of sight), and is selected again once the filter shows it,
+    // unless another layer was picked meanwhile.
+    let q = filter_query(&app.ui.layer_filter);
+    // Whether the filter shows layer `id` (None: the map has no such layer).
+    let shown = |s: &Session, id: u32| s.map().layer(id).map(|l| filter_shows(&q, &l.name));
+    match (app.session.active_layer, app.ui.layer_filter_hid) {
+        (Some(id), _) if shown(&app.session, id) == Some(false) => {
+            // No command clears the active layer; it is view state, like a click on an empty row.
+            app.session.active_layer = None;
+            app.ui.layer_filter_hid = Some(id);
+        }
+        (Some(_), Some(_)) => app.ui.layer_filter_hid = None,
+        (None, Some(id)) => match shown(&app.session, id) {
+            Some(true) => {
+                app.ui.layer_filter_hid = None;
+                let _ = app.run("layer.select", json!({"layer": id}));
+            }
+            Some(false) => {}
+            None => app.ui.layer_filter_hid = None,
+        },
+        _ => {}
+    }
+}
+
+/// The filter's text as matched: trimmed and lowercased (empty: no filter).
+fn filter_query(text: &str) -> String {
+    text.trim().to_lowercase()
+}
+
+/// Whether a name passes the filter `q` (from [`filter_query`]): it contains it, ignoring case.
+fn filter_shows(q: &str, name: &str) -> bool {
+    q.is_empty() || name.to_lowercase().contains(q)
 }
 
 fn contents(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
@@ -245,16 +280,10 @@ fn contents(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
     let map_name = app.session.map().name.clone();
     ui.add_space(8.0);
     filter_box(app, ui, t);
-    let q = app.ui.layer_filter.trim().to_lowercase();
+    // (Which layer is active as the filter changes: `follow_layer_filter`, every frame.)
+    let q = filter_query(&app.ui.layer_filter);
     let filtering = !q.is_empty();
-    let shows = |name: &str| !filtering || name.to_lowercase().contains(&q);
-    // A layer the filter hides stops being the active one, so the Style and Data tabs never act
-    // on a layer out of sight.
-    if let Some(id) = app.session.active_layer
-        && app.session.map().layer(id).is_some_and(|l| !shows(&l.name))
-    {
-        app.session.active_layer = None;
-    }
+    let shows = |name: &str| filter_shows(&q, name);
     // Drawing order header.
     ui.add_space(4.0);
     ui.horizontal_wrapped(|ui| {
@@ -2753,4 +2782,55 @@ fn raster_symbology(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, t: &Tokens) {
             let _ = app.run("layer.transparency", json!({"value": tr}));
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn layer(app: &RustGisApp, name: &str) -> u32 {
+        app.session.map().layer_by_name(name).map(|l| l.id).unwrap_or_default()
+    }
+
+    #[test]
+    fn the_filter_matches_names_ignoring_case_and_spaces() {
+        let q = filter_query("  CI ");
+        assert_eq!(q, "ci");
+        assert!(filter_shows(&q, "Cities") && !filter_shows(&q, "Countries"));
+        assert!(filter_shows(&filter_query("   "), "Anything"), "an empty filter shows everything");
+    }
+
+    /// The active layer follows the Layers filter (#300): a layer it hides stops being active and
+    /// comes back once the filter shows it, unless another layer was picked meanwhile.
+    #[test]
+    fn the_active_layer_follows_the_layer_filter() {
+        let mut app = RustGisApp::with_sample();
+        let (countries, cities) = (layer(&app, "Countries"), layer(&app, "Cities"));
+        app.session.active_layer = Some(countries);
+        follow_layer_filter(&mut app);
+        app.ui.layer_filter = "ci".into();
+        follow_layer_filter(&mut app);
+        assert_eq!((app.session.active_layer, app.ui.layer_filter_hid), (None, Some(countries)), "hidden, so not active");
+        follow_layer_filter(&mut app);
+        assert_eq!(app.session.active_layer, None, "still hidden");
+        // Escape (the filter cleared): Countries is active again.
+        app.ui.layer_filter.clear();
+        follow_layer_filter(&mut app);
+        assert_eq!((app.session.active_layer, app.ui.layer_filter_hid), (Some(countries), None));
+        // Another layer picked while Countries is hidden wins.
+        app.ui.layer_filter = "ci".into();
+        follow_layer_filter(&mut app);
+        app.session.active_layer = Some(cities);
+        follow_layer_filter(&mut app);
+        app.ui.layer_filter.clear();
+        follow_layer_filter(&mut app);
+        assert_eq!((app.session.active_layer, app.ui.layer_filter_hid), (Some(cities), None));
+        // Another map comes into view: no filter, nothing remembered.
+        app.ui.layer_filter = "lakes".into();
+        follow_layer_filter(&mut app);
+        assert_eq!(app.ui.layer_filter_hid, Some(cities));
+        let _ = app.run("map.new", json!({"name": "Second"}));
+        follow_layer_filter(&mut app);
+        assert_eq!((app.ui.layer_filter.as_str(), app.ui.layer_filter_hid), ("", None));
+    }
 }
