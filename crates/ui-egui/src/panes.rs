@@ -455,16 +455,36 @@ struct SourceName {
     hover: String,
 }
 
-/// A source path, web address or database name as a group: a web address by its host (never
-/// its credentials or path), anything else by its last path part, with the whole as hover text.
+/// Address schemes naming a database server: grouped by server and database, not server alone.
+const DATABASE_SCHEMES: [&str; 6] = ["postgres", "postgresql", "postgis", "mysql", "mariadb", "mssql"];
+
+/// A source path, web address or database name as a group: a database address by its server and
+/// database, any other address by its host (never its credentials, path or query), and a path
+/// (`file://` addresses too) by its last part, with the whole path as hover text.
 fn source_name(src: &str) -> SourceName {
-    if let Some((_, rest)) = src.split_once("://") {
+    if let Some((scheme, rest)) = src.split_once("://") {
         let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
         let host = host.rsplit('@').next().unwrap_or(host);
-        return SourceName { key: format!("web:{}", host.to_lowercase()), label: host.to_string(), hover: host.to_string() };
+        let scheme = scheme.to_ascii_lowercase();
+        // `file:///data/x.gpkg`, or an address with no host: a path.
+        if scheme == "file" || host.is_empty() {
+            return path_name(rest);
+        }
+        let name = if DATABASE_SCHEMES.contains(&scheme.as_str()) {
+            let db = rest.split(['?', '#']).next().unwrap_or(rest).split('/').nth(1).filter(|d| !d.is_empty());
+            db.map_or_else(|| host.to_string(), |d| format!("{host}/{d}"))
+        } else {
+            host.to_string()
+        };
+        return SourceName { key: format!("web:{}", name.to_lowercase()), label: name.clone(), hover: name };
     }
-    let name = src.rsplit(['/', '\\']).find(|part| !part.is_empty()).unwrap_or(src);
-    SourceName { key: format!("file:{src}"), label: name.to_string(), hover: src.to_string() }
+    path_name(src)
+}
+
+/// A path as a source group: its last part, with the whole path as hover text.
+fn path_name(path: &str) -> SourceName {
+    let name = path.rsplit(['/', '\\']).find(|part| !part.is_empty()).unwrap_or(path);
+    SourceName { key: format!("file:{path}"), label: name.to_string(), hover: path.to_string() }
 }
 
 /// The source a layer was read from (a raster's file, or the dataset's file, address or
@@ -2998,6 +3018,16 @@ mod tests {
         assert_eq!(source_name("https://Tiles.Example.com/a").key, source_name("https://tiles.example.com/b").key);
         assert_ne!(source_name("/a/x.gpkg").key, source_name("/b/x.gpkg").key);
         assert_eq!(source_name("osm").label, "osm", "a database name");
+        // A file:// address is a path, in the same group as the plain path.
+        let u = source_name("file:///data/world/countries.gpkg");
+        assert_eq!((u.label.as_str(), u.hover.as_str()), ("countries.gpkg", "/data/world/countries.gpkg"));
+        assert_eq!(u.key, f.key);
+        assert_eq!(source_name("file://C:/GIS/rivers.shp").label, "rivers.shp");
+        // A database address: by server and database, never its credentials or options.
+        let db1 = source_name("postgresql://user:secret@db.example.com:5432/gis?sslmode=require");
+        assert_eq!(db1.label, "db.example.com:5432/gis");
+        assert!(!db1.label.contains("secret") && !db1.key.contains("secret") && !db1.label.contains("sslmode"));
+        assert_ne!(db1.key, source_name("postgresql://user@db.example.com:5432/other").key, "two databases, two groups");
     }
 
     #[test]
