@@ -5623,3 +5623,72 @@ fn layout_names_keep_to_200_characters_with_their_number() {
     let name = r["name"].as_str().unwrap_or_default();
     assert_eq!((name.chars().count(), name.ends_with(" 3")), (200, true), "{name}");
 }
+
+#[test]
+fn map_duplicate_copies_a_map_beside_it_and_leaves_layouts_alone() {
+    use rustgis_map::layout::ElementKind;
+    let mut s = world();
+    let first = s.map().name.clone();
+    let layers = s.map().layers.len();
+    s.run("layout.new", &json!({"page": "a4"})).unwrap();
+    s.run("select.byAttributes", &json!({"layer": "Cities", "where": "name = 'Paris'"})).unwrap();
+    s.run("map.new", &json!({"name": "Second"})).unwrap();
+    // A map out of view, copied beside it and brought into view.
+    let r = s.run("map.duplicate", &json!({"map": first})).unwrap();
+    let copy = format!("{first} copy");
+    assert_eq!(r["name"], copy.as_str());
+    let names: Vec<&str> = s.project.maps.iter().map(|m| m.name.as_str()).collect();
+    assert_eq!(names, [first.as_str(), copy.as_str(), "Second"]);
+    assert_eq!((s.project.active_map, s.map().layers.len()), (1, layers));
+    assert_eq!(s.active_layer, s.map().layers.first().map(|l| l.id));
+    // The copy's own: no selection, and changing it leaves the original alone.
+    assert_eq!(s.map().selection_count(), 0);
+    assert!(s.project.maps[0].selection_count() > 0);
+    s.map_mut().layers[0].name = "Changed".into();
+    s.map_mut().layers[0].dataset.features.clear();
+    assert_ne!(s.project.maps[0].layers[0].name, "Changed");
+    assert!(!s.project.maps[0].layers[0].dataset.features.is_empty());
+    // Layouts keep showing the original.
+    let frames: Vec<&str> = s.project.layouts[0]
+        .elements
+        .iter()
+        .filter_map(|e| match &e.kind {
+            ElementKind::MapFrame { map, .. } => Some(map.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(frames, [first.as_str()]);
+    // Copying again numbers the name; a given name is used; one undo removes a copy.
+    assert_eq!(s.run("map.duplicate", &json!({"map": first})).unwrap()["name"], format!("{copy} 2"));
+    assert_eq!(s.run("map.duplicate", &json!({"name": " Atlas "})).unwrap()["name"], "Atlas");
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert_eq!(s.project.maps.len(), 4);
+    for m in [json!(0), json!("Nowhere")] {
+        assert!(s.run("map.duplicate", &json!({"map": m})).is_err(), "{m}");
+    }
+    // A long name keeps to 200 characters with " copy".
+    s.run("map.rename", &json!({"name": "é".repeat(300)})).unwrap();
+    let name = s.run("map.duplicate", &Value::Null).unwrap()["name"].as_str().unwrap_or_default().to_string();
+    assert_eq!((name.chars().count(), name.ends_with(" copy")), (200, true), "{name}");
+}
+
+#[test]
+fn layout_duplicate_copies_every_element_and_opens_the_copy() {
+    let mut s = world();
+    s.run("layout.new", &json!({"name": "Europe", "page": "a4"})).unwrap();
+    s.run("layout.new", &json!({"name": "Other"})).unwrap();
+    let r = s.run("layout.duplicate", &json!({"layout": "europe"})).unwrap();
+    assert_eq!((r["name"].as_str(), r["layout"].as_u64()), (Some("Europe copy"), Some(1)));
+    let names: Vec<&str> = s.project.layouts.iter().map(|l| l.name.as_str()).collect();
+    assert_eq!(names, ["Europe", "Europe copy", "Other"]);
+    assert_eq!(s.active_layout, Some(1));
+    let (a, b) = (&s.project.layouts[0], &s.project.layouts[1]);
+    assert_eq!((&a.elements, a.width, a.height), (&b.elements, b.width, b.height));
+    s.project.layouts[1].elements.clear();
+    assert!(!s.project.layouts[0].elements.is_empty());
+    // The open layout by default, with a given name; one undo removes it.
+    assert_eq!(s.run("layout.duplicate", &json!({"newName": "Print"})).unwrap()["name"], "Print");
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert_eq!(s.project.layouts.len(), 3);
+    assert!(s.run("layout.duplicate", &json!({"layout": "Nowhere"})).is_err());
+}

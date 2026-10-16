@@ -534,6 +534,10 @@ fn catalog(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                                 let _ = app.run("ui.dialog", json!({"name": "renameMap", "target": m}));
                                 ui.close();
                             }
+                            if ui.button(tl!("Duplicate")).clicked() {
+                                let _ = app.run("map.duplicate", json!({"map": m}));
+                                ui.close();
+                            }
                             if ui.button(tl!("Delete")).clicked() {
                                 app.map.deleting = Some(crate::mapview::Deletion::Map(m.clone()));
                                 ui.close();
@@ -593,6 +597,13 @@ fn catalog(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                             resp.context_menu(|ui| {
                                 if ui.button(tl!("Rename…")).clicked() {
                                     let _ = app.run("ui.dialog", json!({"name": "renameLayout", "target": n}));
+                                    ui.close();
+                                }
+                                // The copy opens, on the Publish tab like a click on a layout.
+                                if ui.button(tl!("Duplicate")).clicked() {
+                                    if app.run("layout.duplicate", json!({"layout": n})).is_ok() {
+                                        app.ui.tab = "Publish".into();
+                                    }
                                     ui.close();
                                 }
                                 if ui.button(tl!("Delete")).clicked() {
