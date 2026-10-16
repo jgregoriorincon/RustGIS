@@ -106,9 +106,11 @@ pub fn commands() -> Vec<C> {
             if n.is_empty() {
                 return Err("name is required".into());
             }
-            let i = match ps(p, "map") {
-                Some(m) => s.project.maps.iter().position(|x| x.name.eq_ignore_ascii_case(m)).ok_or_else(|| format!("no map '{m}'"))?,
-                None => s.project.active_map,
+            // A `map` that isn't a name is an error, never the active map.
+            let i = match p.get("map") {
+                None | Some(Value::Null) => s.project.active_map,
+                Some(Value::String(m)) => s.project.maps.iter().position(|x| x.name.eq_ignore_ascii_case(m)).ok_or_else(|| format!("no map '{m}'"))?,
+                Some(_) => return Err("map must be a map's name".into()),
             };
             let old = s.project.maps.get(i).map(|m| m.name.clone()).ok_or("no map")?;
             // Unique among the other maps, so a name finds one map (tabs, Browser, map frames).

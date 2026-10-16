@@ -5603,6 +5603,11 @@ fn map_rename_names_any_map_and_what_shows_it_follows() {
     assert_eq!(shown(&s), (vec![first.clone()], vec![first.clone()], first.clone()));
     assert!(s.project.maps.iter().any(|m| m.name == first));
     assert!(s.run("map.rename", &json!({"map": "Nowhere", "name": "X"})).is_err());
+    // A selector that isn't a name never falls back to the active map.
+    for m in [json!(0), json!(true), json!(["Atlas"])] {
+        assert!(s.run("map.rename", &json!({"map": m, "name": "X"})).is_err(), "{m}");
+    }
+    assert_eq!(s.map().name, "Second");
 }
 
 #[test]
