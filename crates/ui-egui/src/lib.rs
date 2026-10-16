@@ -1901,7 +1901,11 @@ impl RustGisApp {
                     };
                     let Some(name) = found else {
                         self.dialogs.open = None;
-                        return Err(i18n::fmt("Nothing named {name} to rename", &[("name", target.unwrap_or(""))]));
+                        // With no target, only Rename Layout can miss: no layout is open.
+                        return Err(match target {
+                            Some(n) => i18n::fmt("Nothing named {name} to rename", &[("name", n)]),
+                            None => tl!("open a layout first").to_string(),
+                        });
                     };
                     self.dialogs.a = name.clone();
                     self.dialogs.text = name;
