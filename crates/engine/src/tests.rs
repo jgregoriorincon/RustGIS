@@ -5688,7 +5688,34 @@ fn layout_duplicate_copies_every_element_and_opens_the_copy() {
     assert!(!s.project.layouts[0].elements.is_empty());
     // The open layout by default, with a given name; one undo removes it.
     assert_eq!(s.run("layout.duplicate", &json!({"newName": "Print"})).unwrap()["name"], "Print");
+    assert_eq!(s.active_layout, Some(2));
     s.run("edit.undo", &Value::Null).unwrap();
     assert_eq!(s.project.layouts.len(), 3);
-    assert!(s.run("layout.duplicate", &json!({"layout": "Nowhere"})).is_err());
+    // Undo takes the copy away, so the layout open before it opens again, not whatever sits at
+    // the copy's old position; an open layout the undo keeps stays open (redo).
+    let open = |s: &Session| s.project.layouts.get(s.active_layout.unwrap_or(usize::MAX)).map(|l| l.name.clone());
+    assert_eq!(open(&s).as_deref(), Some("Europe copy"));
+    s.run("edit.redo", &Value::Null).unwrap();
+    assert_eq!((open(&s).as_deref(), s.project.layouts[2].name.as_str()), (Some("Europe copy"), "Print"));
+    s.run("edit.undo", &Value::Null).unwrap();
+    s.run("layout.activate", &json!({"name": "Other"})).unwrap();
+    s.run("layout.duplicate", &json!({"layout": "Europe"})).unwrap();
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert_eq!(open(&s).as_deref(), Some("Other"));
+    // Undoing a change made on the map leaves the layout opened since then open, and the map
+    // view stays the map view.
+    s.run("layout.close", &Value::Null).unwrap();
+    s.run("map.rename", &json!({"name": "Atlas"})).unwrap();
+    s.run("layout.activate", &json!({"name": "Europe"})).unwrap();
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert_eq!(open(&s).as_deref(), Some("Europe"));
+    s.run("layout.close", &Value::Null).unwrap();
+    s.run("edit.redo", &Value::Null).unwrap();
+    assert_eq!(s.active_layout, None);
+    // A selector that is neither a name nor an index never falls back to the open layout.
+    for l in [json!("Nowhere"), json!(false), json!(-1), json!(9), json!(["Europe"])] {
+        assert!(s.run("layout.duplicate", &json!({"layout": l})).is_err(), "{l}");
+    }
+    assert_eq!(s.project.layouts.len(), 3);
+    assert!(s.run("layout.duplicate", &json!({"layout": 0.0})).is_ok(), "an index sent as a float (forms)");
 }

@@ -136,11 +136,16 @@ pub fn commands() -> Vec<C> {
 /// The layout named or numbered by `layout`, else the active one, else the only one.
 fn index(s: &Session, p: &Value) -> Result<usize, String> {
     let ls = &s.project.layouts;
-    if let Some(n) = ps(p, "layout") {
-        return ls.iter().position(|l| l.name.eq_ignore_ascii_case(n)).ok_or_else(|| format!("no layout '{n}'"));
-    }
-    if let Some(i) = p.get("layout").and_then(Value::as_u64) {
-        return usize::try_from(i).ok().filter(|i| *i < ls.len()).ok_or_else(|| format!("no layout {i}"));
+    // A `layout` that is neither a name nor an index is an error, never the open layout.
+    match p.get("layout") {
+        None | Some(Value::Null) => {}
+        Some(Value::String(n)) => {
+            return ls.iter().position(|l| l.name.eq_ignore_ascii_case(n)).ok_or_else(|| format!("no layout '{n}'"));
+        }
+        Some(_) => {
+            let i = super::uint(p, "layout").ok_or("layout must be a layout's name or index")?;
+            return usize::try_from(i).ok().filter(|i| *i < ls.len()).ok_or_else(|| format!("no layout {i}"));
+        }
     }
     s.active_layout
         .filter(|i| *i < ls.len())

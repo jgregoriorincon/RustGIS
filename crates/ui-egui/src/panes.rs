@@ -534,8 +534,12 @@ fn catalog(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                                 let _ = app.run("ui.dialog", json!({"name": "renameMap", "target": m}));
                                 ui.close();
                             }
+                            // The copy comes into view, out of an open layout like a map tab.
                             if ui.button(tl!("Duplicate")).clicked() {
-                                let _ = app.run("map.duplicate", json!({"map": m}));
+                                if app.run("map.duplicate", json!({"map": m})).is_ok() {
+                                    let _ = app.run("layout.close", Value::Null);
+                                    app.map.popup = None;
+                                }
                                 ui.close();
                             }
                             if ui.button(tl!("Delete")).clicked() {
