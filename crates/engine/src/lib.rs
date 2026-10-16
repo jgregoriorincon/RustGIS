@@ -612,9 +612,10 @@ impl Session {
                 self.dirty = true;
             }
             (Err(_), Some(snap)) => {
-                let open = self.open_layout_name();
+                // The project as it was before the command, so the layout open then, whatever
+                // the command opened on the way (a task's steps).
                 self.project = snap;
-                self.reopen_layout(open, open_layout);
+                self.active_layout = open_layout;
                 if let Some(c) = counts {
                     self.edit_counts = c;
                 }
@@ -718,12 +719,12 @@ impl Session {
         self.active_layout.and_then(|i| self.project.layouts.get(i)).map(|l| l.name.clone())
     }
 
-    /// After the project is swapped (undo, redo, a failed command): the open layout stays open
-    /// wherever it now is; one the swap took away gives way to the layout open with the restored
-    /// project (`saved`). With no layout open, none opens.
+    /// After undo or redo swaps the project: the open layout stays open wherever it now is (so
+    /// redo doesn't move the view to a layout it brings back); one the swap took away gives way to
+    /// the layout open with the restored project (`saved`). With no layout open, none opens.
     fn reopen_layout(&mut self, open: Option<String>, saved: Option<usize>) {
         let ls = &self.project.layouts;
-        self.active_layout = open.and_then(|n| ls.iter().position(|l| l.name == n).or(saved.filter(|i| *i < ls.len())));
+        self.active_layout = open.and_then(|n| ls.iter().position(|l| l.name.eq_ignore_ascii_case(&n)).or(saved.filter(|i| *i < ls.len())));
     }
 
     fn touch_all_geometry(&mut self) {

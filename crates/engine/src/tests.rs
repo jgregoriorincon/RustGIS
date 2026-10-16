@@ -5801,3 +5801,19 @@ fn layout_duplicate_copies_every_element_and_opens_the_copy() {
     assert_eq!(s.project.layouts.len(), 3);
     assert!(s.run("layout.duplicate", &json!({"layout": 0.0})).is_ok(), "an index sent as a float (forms)");
 }
+
+/// A command that fails part way (a task's later step) leaves open the layout that was open
+/// before it, not one an earlier step opened.
+#[test]
+fn a_failed_command_reopens_the_layout_open_before_it() {
+    let mut s = world();
+    s.run("layout.new", &json!({"name": "A"})).unwrap();
+    s.run("layout.new", &json!({"name": "B"})).unwrap();
+    s.run("layout.activate", &json!({"name": "A"})).unwrap();
+    let r = s.guarded("Task", true, |s| {
+        s.run("layout.activate", &json!({"name": "B"}))?;
+        Err("a later step failed".into())
+    });
+    assert!(r.is_err());
+    assert_eq!(s.active_layout.and_then(|i| s.project.layouts.get(i)).map(|l| l.name.as_str()), Some("A"));
+}
