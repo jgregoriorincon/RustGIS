@@ -134,9 +134,8 @@ fn left_header(app: &mut RustGisApp, ui: &mut Ui, left: LeftPane, t: &Tokens) {
     let room = r.width() - 6.0 - 36.0 - 2.0 * (LEFT_PANES.len() as f32 - 1.0);
     let icons_only = widths.iter().sum::<f32>() > room;
     let mut x = r.min.x + 6.0;
-    for (i, (pane, _, icon, open)) in LEFT_PANES.iter().enumerate() {
-        let name = names.get(i).copied().unwrap_or_default();
-        let w = if icons_only { 32.0 } else { widths.get(i).copied().unwrap_or(60.0) };
+    for (i, (((pane, _, icon, open), name), width)) in LEFT_PANES.iter().zip(names).zip(widths).enumerate() {
+        let w = if icons_only { 32.0 } else { width };
         let tr = Rect::from_min_size(pos2(x, r.min.y), vec2(w, r.height()));
         let on = *pane == left;
         let mut resp = ui.interact(tr, egui::Id::new(("left_pane_tab", i)), Sense::click());
