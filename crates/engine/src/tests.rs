@@ -1065,6 +1065,52 @@ fn symbology_classes_follow_the_definition_query() {
 }
 
 #[test]
+fn layout_legends_list_what_the_frame_draws() {
+    // #207's repro: classes taken before the query (or from a style) name values no drawn country has.
+    let mut s = world();
+    s.run("layer.symbology", &json!({"layer": "Countries", "type": "unique", "field": "income_grp"})).unwrap();
+    s.run("layer.definitionQuery", &json!({"layer": "Countries", "where": "continent = 'South America'"})).unwrap();
+    let l = s.map().layer_by_name("Countries").unwrap();
+    let rustgis_map::Renderer::Unique { classes, .. } = &l.renderer else { panic!("unique renderer expected") };
+    assert!(classes.len() > 2, "{classes:?}");
+    let shown: Vec<String> = l.shown_legend(4e7).unwrap().into_iter().map(|e| e.label).collect();
+    let mut drawn: Vec<String> = {
+        let fi = l.dataset.field_index("income_grp").unwrap();
+        l.visible_rows().iter().enumerate().filter(|(_, v)| **v).map(|(r, _)| l.dataset.value(r, fi).to_string()).collect()
+    };
+    drawn.sort();
+    drawn.dedup();
+    let mut sorted = shown.clone();
+    sorted.sort();
+    assert_eq!(sorted, drawn, "only the classes South America has, and no <all other values>");
+    assert!(shown.len() < classes.len());
+    // The legend element lists what its frame draws unless told to list every class.
+    s.run("layout.new", &json!({"page": "a4", "orientation": "portrait", "template": "map"})).unwrap();
+    let legend =
+        |s: &Session| s.project.layouts[0].elements.iter().find(|e| e.kind.code() == "legend").map(|e| (e.id, e.kind.clone())).unwrap();
+    let (id, kind) = legend(&s);
+    assert!(matches!(kind, rustgis_map::layout::ElementKind::Legend { all_classes: false, .. }), "{kind:?}");
+    s.run("layout.update", &json!({"element": id, "allClasses": true})).unwrap();
+    assert!(matches!(legend(&s).1, rustgis_map::layout::ElementKind::Legend { all_classes: true, hide_other: false, .. }));
+    // <all other values> can be left out on its own, in either mode.
+    s.run("layout.update", &json!({"element": id, "hideOther": true})).unwrap();
+    assert!(matches!(legend(&s).1, rustgis_map::layout::ElementKind::Legend { all_classes: true, hide_other: true, .. }));
+    // Read like every other on/off parameter (`b`): a value that is neither a bool nor text keeps
+    // the setting, and text other than true/yes/1/on turns it off.
+    s.run("layout.update", &json!({"element": id, "hideOther": 5})).unwrap();
+    assert!(matches!(legend(&s).1, rustgis_map::layout::ElementKind::Legend { hide_other: true, .. }), "a number keeps the setting");
+    s.run("layout.update", &json!({"element": id, "hideOther": "off"})).unwrap();
+    assert!(matches!(legend(&s).1, rustgis_map::layout::ElementKind::Legend { hide_other: false, .. }));
+    let r = s.run("layout.addElement", &json!({"kind": "legend", "allClasses": true})).unwrap();
+    let added = r["element"].as_u64().unwrap() as u32;
+    let kind = s.project.layouts[0].element(added).map(|e| e.kind.clone()).unwrap();
+    assert!(matches!(kind, rustgis_map::layout::ElementKind::Legend { all_classes: true, .. }), "{kind:?}");
+    // Layouts saved before the option open with it off.
+    let old: rustgis_map::layout::ElementKind = serde_json::from_str(r#"{"Legend":{"frame":1,"title":"L"}}"#).unwrap();
+    assert!(matches!(old, rustgis_map::layout::ElementKind::Legend { all_classes: false, hide_other: false, .. }));
+}
+
+#[test]
 fn layouts_compose_export_and_round_trip() {
     use base64::Engine;
     let dir = std::env::temp_dir().join(format!("rustgis-layout-{}", std::process::id()));
@@ -5562,6 +5608,42 @@ fn map_rename_keeps_map_names_unique() {
     let r = s.run("map.rename", &json!({"name": long})).unwrap();
     let name = r["name"].as_str().unwrap_or_default();
     assert_eq!((name.chars().count(), name.ends_with(" 2")), (200, true), "{name}");
+}
+
+#[test]
+fn bookmarks_export_and_import_across_projections() {
+    let mut s = Session::new(sample::world_project());
+    s.run("map.goToXY", &json!({"lon": 10.0, "lat": 50.0, "scale": 5_000_000})).unwrap();
+    s.run("bookmark.add", &json!({"name": "Here"})).unwrap();
+    let dir = std::env::temp_dir().join(format!("rustgis-bookmarks-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("marks.rgisbookmarks").display().to_string();
+    s.run("bookmark.save", &json!({"path": file})).unwrap();
+    let before = s.map().bookmarks.len();
+    s.run("bookmark.remove", &json!({"name": "Here"})).unwrap();
+    assert_eq!(s.map().bookmarks.len(), before - 1);
+    // Imported into a map in another projection, the bookmark still shows the same place.
+    s.run("map.projection", &json!({"type": "europeEqualArea"})).unwrap();
+    let r = s.run("bookmark.import", &json!({"path": file})).unwrap();
+    // Places a Europe-only projection can't show are left out; same-named bookmarks are replaced.
+    let added = r["added"].as_array().unwrap();
+    assert!(added.iter().any(|n| n == "Here") && !added.iter().any(|n| n == "Americas"), "{added:?}");
+    assert_eq!(s.map().bookmarks.len(), before);
+    // Re-importing replaces bookmarks where they are, and names each once.
+    let order: Vec<String> = s.map().bookmarks.iter().map(|b| b.name.clone()).collect();
+    let twice = json!({"bookmarks": [{"name": "Europe", "lon": 10, "lat": 50, "metresPerPixel": 1000}, {"name": "europe", "lon": 11, "lat": 50, "metresPerPixel": 1000}]});
+    let r = s.run("bookmark.import", &json!({"text": twice.to_string()})).unwrap();
+    assert_eq!(r["added"], json!(["Europe"]));
+    assert_eq!(s.map().bookmarks.iter().map(|b| b.name.clone()).collect::<Vec<_>>(), order);
+    s.run("bookmark.go", &json!({"name": "Here"})).unwrap();
+    let c = s.map().center_lonlat();
+    assert!((c.x - 10.0).abs() < 1e-6 && (c.y - 50.0).abs() < 1e-6, "{c:?}");
+    assert!((s.scale() / 5_000_000.0 - 1.0).abs() < 0.02, "{}", s.scale());
+    // Junk is refused, and junk entries are skipped.
+    assert!(s.run("bookmark.import", &json!({"text": "{}"})).is_err());
+    let junk = json!({"bookmarks": [{"name": "Bad", "lon": 500, "lat": 0, "metresPerPixel": 1}, {"name": "", "lon": 0, "lat": 0, "metresPerPixel": 1}]});
+    assert!(s.run("bookmark.import", &json!({"text": junk.to_string()})).is_err());
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
