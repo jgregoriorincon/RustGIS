@@ -1,6 +1,6 @@
 # Maps and Basemaps
 
-A project holds one or more maps (**Data › New Map**), each with its own layers, basemap,
+A project holds one or more maps (**Home › New Map**), each with its own layers, basemap,
 projection, bookmarks and view settings. Maps open as tabs above the map view.
 
 ## Navigating
