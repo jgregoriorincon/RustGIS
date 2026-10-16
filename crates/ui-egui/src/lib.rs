@@ -205,6 +205,18 @@ pub(crate) fn fetch_into(url: &str) -> Slot<Result<Vec<u8>, String>> {
     slot
 }
 
+/// How the Layers pane lists the map's layers (#301).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LayersView {
+    /// In drawing order, top first; the only view that reorders layers.
+    #[default]
+    DrawingOrder,
+    /// Grouped under the file, web address or database each layer comes from.
+    DataSource,
+    /// Selectable and not selectable layers, with their selected feature counts.
+    Selection,
+}
+
 /// Panes on the left of the map.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LeftPane {
@@ -288,6 +300,8 @@ pub struct UiState {
     /// The active layer the filter hid (so it stopped being active), selected again once the
     /// filter shows it, unless another layer was picked meanwhile.
     pub layer_filter_hid: Option<u32>,
+    /// How the Layers pane lists the layers (#301). Kept for the session, not saved.
+    pub layers_view: LayersView,
     /// The command an item picked in the browser opens with (web).
     pub pending_open: Option<&'static str>,
     /// The file the project was last saved or opened as (web), which Save downloads again.
@@ -401,6 +415,7 @@ impl Default for UiState {
             layer_filter: String::new(),
             layer_filter_map: String::new(),
             layer_filter_hid: None,
+            layers_view: LayersView::DrawingOrder,
         }
     }
 }

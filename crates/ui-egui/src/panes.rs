@@ -13,7 +13,7 @@ use rustgis_engine::map::{ClassMethod, Layer, Marker, Ramp, RasterRenderer, Rend
 use serde_json::{Value, json};
 
 use crate::theme::{Tokens, c32, regular, rgba, semibold};
-use crate::{LeftPane, RightPane, RustGisApp, icons};
+use crate::{LayersView, LeftPane, RightPane, RustGisApp, icons};
 
 pub fn show(app: &mut RustGisApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
@@ -284,16 +284,35 @@ fn contents(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
     let q = filter_query(&app.ui.layer_filter);
     let filtering = !q.is_empty();
     let shows = |name: &str| filter_shows(&q, name);
-    // Drawing order header.
+    let view = app.ui.layers_view;
+    // Only the drawing order view, unfiltered, reorders: elsewhere rows dropped or moved would
+    // land among layers listed apart or hidden.
+    let reorder = view == LayersView::DrawingOrder && !filtering;
+    // The view's name, and the buttons that pick the view (#301).
     ui.add_space(4.0);
-    ui.horizontal_wrapped(|ui| {
+    ui.horizontal(|ui| {
         ui.add_space(12.0);
-        ui.label(egui::RichText::new(tl!("Drawing Order")).size(11.5).color(t.text_dim));
-        // Rows dropped among hidden layers would land in unclear places.
-        if filtering {
-            ui.label(egui::RichText::new(tl!("Clear the filter to reorder")).size(11.0).color(t.text_disabled));
-        }
+        let title = match view {
+            LayersView::DrawingOrder => "Drawing Order",
+            LayersView::DataSource => "Data Source",
+            LayersView::Selection => "Selection",
+        };
+        ui.label(egui::RichText::new(tl!(title)).size(11.5).color(t.text_dim));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.add_space(8.0);
+            for &(v, icon, hover) in LAYERS_VIEWS.iter().rev() {
+                if view_button(ui, icon, tl!(hover), v == view, t).clicked() {
+                    app.ui.layers_view = v;
+                }
+            }
+        });
     });
+    if filtering && view == LayersView::DrawingOrder {
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(12.0);
+            ui.label(egui::RichText::new(tl!("Clear the filter to reorder")).size(11.0).color(t.text_disabled));
+        });
+    }
     ui.add_space(2.0);
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -303,30 +322,39 @@ fn contents(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
             ui.label(egui::RichText::new(&map_name).font(semibold(12.5)));
         });
         let layers: Vec<Layer> = app.session.map().layers.clone();
-        let scale = app.session.scale();
-        let blocks: Vec<(u32, Rect)> =
-            layers.iter().filter(|l| shows(&l.name)).map(|l| (l.id, layer_row(app, ui, l, scale, !filtering, t))).collect();
-        if !filtering {
-            layer_drop(app, ui, &blocks, t);
-        }
-        // Web tile layers (services, tile addresses) draw over the basemap and under the layers.
         let tiles: Vec<TileLayer> = app.session.map().tiles.clone();
-        let mut tiles_shown = 0;
-        for (i, tile) in tiles.iter().enumerate().filter(|(_, x)| shows(&x.name)) {
-            tile_row(app, ui, i, tiles.len(), !filtering, tile, t);
-            tiles_shown += 1;
-        }
+        let scale = app.session.scale();
+        // How many layer and tile rows the view lists.
+        let listed = match view {
+            LayersView::DrawingOrder => {
+                let blocks: Vec<(u32, Rect)> =
+                    layers.iter().filter(|l| shows(&l.name)).map(|l| (l.id, layer_row(app, ui, l, scale, reorder, t))).collect();
+                if reorder {
+                    layer_drop(app, ui, &blocks, t);
+                }
+                // Web tile layers (services, tile addresses) draw over the basemap and under the layers.
+                let mut n = blocks.len();
+                for (i, tile) in tiles.iter().enumerate().filter(|(_, x)| shows(&x.name)) {
+                    tile_row(app, ui, i, tiles.len(), reorder, tile, t);
+                    n += 1;
+                }
+                n
+            }
+            LayersView::DataSource => source_groups(app, ui, &layers, &tiles, scale, &shows, t),
+            LayersView::Selection => selection_groups(app, ui, &layers, &shows, t),
+        };
         let tables: Vec<(u32, String)> =
             app.session.project.tables.iter().filter(|x| shows(&x.name)).map(|x| (x.id, x.name.clone())).collect();
         // A map with no layers says so below instead.
-        if filtering && !layers.is_empty() && blocks.is_empty() && tiles_shown == 0 && tables.is_empty() {
+        if filtering && !layers.is_empty() && listed == 0 && tables.is_empty() {
             ui.add_space(12.0);
             ui.vertical_centered(|ui| {
                 ui.label(egui::RichText::new(tl!("No layers match")).color(t.text_dim));
             });
         }
-        // The basemap row at the bottom, like a desktop GIS (not a layer, so not while filtering).
-        if !filtering {
+        // The basemap row at the bottom of the drawing order, like a desktop GIS (not a layer, so
+        // not while filtering).
+        if view == LayersView::DrawingOrder && !filtering {
             ui.add_space(2.0);
             ui.horizontal(|ui| {
                 ui.add_space(30.0);
@@ -397,6 +425,196 @@ fn filter_box(app: &mut RustGisApp, ui: &mut Ui) {
         crate::widgets::search_field(ui, &mut app.ui.layer_filter, tl!("Filter layers"));
     });
     ui.separator();
+}
+
+/// The Layers pane's views (#301): each with its button's icon and hover text.
+const LAYERS_VIEWS: [(LayersView, &str, &str); 3] = [
+    (LayersView::DrawingOrder, "contents", "List by drawing order"),
+    (LayersView::DataSource, "web_map", "List by data source"),
+    (LayersView::Selection, "select", "List by selection"),
+];
+
+/// A small icon button that picks a Layers view; `on` marks the view shown.
+fn view_button(ui: &mut Ui, icon: &str, hover: &str, on: bool, t: &Tokens) -> egui::Response {
+    let (r, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, hover));
+    if on {
+        ui.painter().rect_filled(r, CornerRadius::same(5), t.selection);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r, CornerRadius::same(5), t.hover);
+    }
+    icons::paint(ui.painter(), r.shrink(4.0), icon, if on { t.text } else { t.text_dim }, t.accent);
+    resp.on_hover_text(hover)
+}
+
+/// Where layers come from, as the Data Source view groups them: `key` tells sources apart,
+/// `label` names the group and `hover` says more.
+struct SourceName {
+    key: String,
+    label: String,
+    hover: String,
+}
+
+/// A source path, web address or database name as a group: a web address by its host (never
+/// its credentials or path), anything else by its last path part, with the whole as hover text.
+fn source_name(src: &str) -> SourceName {
+    if let Some((_, rest)) = src.split_once("://") {
+        let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+        let host = host.rsplit('@').next().unwrap_or(host);
+        return SourceName { key: format!("web:{}", host.to_lowercase()), label: host.to_string(), hover: host.to_string() };
+    }
+    let name = src.rsplit(['/', '\\']).find(|part| !part.is_empty()).unwrap_or(src);
+    SourceName { key: format!("file:{src}"), label: name.to_string(), hover: src.to_string() }
+}
+
+/// The source a layer was read from (a raster's file, or the dataset's file, address or
+/// database), if any: layers made in the app (samples, drawings, tool outputs) have none.
+fn layer_source(l: &Layer) -> Option<SourceName> {
+    let raster = l.raster.as_ref().and_then(|r| r.path.as_ref().or(r.file_name.as_ref()));
+    raster.or(l.dataset.source.as_ref()).filter(|s| !s.trim().is_empty()).map(|s| source_name(s.as_str()))
+}
+
+/// A group's heading in a Layers view, with optional hover text.
+fn group_header(ui: &mut Ui, title: &str, hover: Option<&str>, t: &Tokens) {
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.add_space(12.0);
+        let resp = ui.label(egui::RichText::new(title).font(semibold(12.0)).color(t.text_dim));
+        if let Some(h) = hover {
+            resp.on_hover_text(h);
+        }
+    });
+}
+
+/// The Data Source view: layers and web tile layers under the file, web address or database
+/// they come from (by name), then those from none; within a group, in drawing order. Returns
+/// how many rows it lists.
+fn source_groups(
+    app: &mut RustGisApp,
+    ui: &mut Ui,
+    layers: &[Layer],
+    tiles: &[TileLayer],
+    scale: f64,
+    shows: &dyn Fn(&str) -> bool,
+    t: &Tokens,
+) -> usize {
+    enum Item<'a> {
+        Layer(&'a Layer),
+        Tile(usize, &'a TileLayer),
+    }
+    type Groups<'a> = Vec<(Option<SourceName>, Vec<Item<'a>>)>;
+    // Into the group with the same source, or a new one.
+    fn add<'a>(groups: &mut Groups<'a>, src: Option<SourceName>, item: Item<'a>) {
+        let key = src.as_ref().map(|s| s.key.clone());
+        match groups.iter_mut().find(|g| g.0.as_ref().map(|s| &s.key) == key.as_ref()) {
+            Some(g) => g.1.push(item),
+            None => groups.push((src, vec![item])),
+        }
+    }
+    let mut groups: Groups<'_> = Vec::new();
+    for l in layers.iter().filter(|l| shows(&l.name)) {
+        add(&mut groups, layer_source(l), Item::Layer(l));
+    }
+    for (i, tile) in tiles.iter().enumerate().filter(|(_, x)| shows(&x.name)) {
+        add(&mut groups, Some(source_name(&tile.url)), Item::Tile(i, tile));
+    }
+    groups.sort_by(|a, b| match (&a.0, &b.0) {
+        (Some(x), Some(y)) => x.label.to_lowercase().cmp(&y.label.to_lowercase()),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+    let mut n = 0;
+    for (src, items) in groups {
+        match &src {
+            Some(s) => group_header(ui, &s.label, Some(&s.hover), t),
+            None => group_header(ui, tl!("In memory"), Some(tl!("Made in RustGIS: samples, drawings and tool outputs")), t),
+        }
+        for item in items {
+            match item {
+                Item::Layer(l) => {
+                    layer_row(app, ui, l, scale, false, t);
+                }
+                Item::Tile(i, tile) => tile_row(app, ui, i, tiles.len(), false, tile, t),
+            }
+            n += 1;
+        }
+    }
+    n
+}
+
+/// The Selection view: the feature layers that can be selected, then those that can't, each
+/// with its selected feature count (rasters and web tile layers are never selected). Returns how
+/// many rows it lists.
+fn selection_groups(app: &mut RustGisApp, ui: &mut Ui, layers: &[Layer], shows: &dyn Fn(&str) -> bool, t: &Tokens) -> usize {
+    let mut n = 0;
+    for (selectable, title) in [(true, "Selectable"), (false, "Not Selectable")] {
+        let rows: Vec<&Layer> = layers.iter().filter(|l| !l.is_raster() && l.selectable == selectable && shows(&l.name)).collect();
+        if rows.is_empty() {
+            continue;
+        }
+        group_header(ui, tl!(title), None, t);
+        for l in rows {
+            selection_row(app, ui, l, t);
+            n += 1;
+        }
+    }
+    n
+}
+
+/// A layer's row in the Selection view: a box for whether it can be selected
+/// (`layer.selectable`), its name, and how many of its features are selected with a ✕ that clears
+/// them (`select.rows`). A click makes it the active layer; right-click opens its menu.
+fn selection_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, t: &Tokens) {
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::click());
+    if app.session.active_layer == Some(l.id) {
+        ui.painter().rect_filled(r.shrink2(vec2(4.0, 1.0)), CornerRadius::same(5), t.selection);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r.shrink2(vec2(4.0, 1.0)), CornerRadius::same(5), t.hover);
+    }
+    // Lined up with the other views' checkboxes and names.
+    let cb = Rect::from_center_size(pos2(r.min.x + 33.0, r.center().y), vec2(14.0, 14.0));
+    let cb_resp = ui.interact(cb, egui::Id::new(("layer_selectable", l.id)), Sense::click());
+    cb_resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, l.selectable, tl!("Selectable")));
+    visibility_box(ui, cb, l.selectable, t);
+    // Only the map's interactive selection reads it: the tools that name a layer (Select By
+    // Attributes, Select Layer By Location, the attribute table) select in any layer.
+    if cb_resp.on_hover_text(tl!("Selectable on the map: the Select tool picks its features")).clicked() {
+        let _ = app.run("layer.selectable", json!({"layer": l.id}));
+    }
+    let count = l.selection.len();
+    let mut right = r.max.x - 8.0;
+    if count > 0 {
+        let cr = Rect::from_center_size(pos2(right - 11.0, r.center().y), vec2(22.0, 22.0));
+        let clear = ui.interact(cr, egui::Id::new(("layer_selection_clear", l.id)), Sense::click());
+        clear.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Clear selection")));
+        if clear.hovered() {
+            ui.painter().rect_filled(cr, CornerRadius::same(5), t.hover);
+        }
+        icons::paint(ui.painter(), cr.shrink(5.0), "close", t.text_dim, t.accent);
+        if clear.on_hover_text(tl!("Clear selection")).clicked() {
+            let _ = app.run("select.rows", json!({"layer": l.id, "rows": []}));
+        }
+        let g = ui.painter().layout_no_wrap(count.to_string(), regular(12.0), t.text_dim);
+        right = cr.min.x - 4.0 - g.size().x;
+        ui.painter().galley(pos2(right, r.center().y - g.size().y / 2.0), g, t.text_dim);
+        right -= 8.0;
+    }
+    let x = r.min.x + 48.0;
+    let color = if l.selectable { t.text } else { t.text_disabled };
+    let name = ui.painter().layout(l.name.clone(), regular(12.5), color, (right - x).max(0.0));
+    let (clip, at) = (Rect::from_min_max(r.min, pos2(right, r.max.y)), pos2(x, r.center().y - name.size().y / 2.0));
+    ui.painter().with_clip_rect(clip).galley(at, name, color);
+    let resp = if count > 0 { resp.on_hover_text(selected_text(count)) } else { resp };
+    if resp.clicked() {
+        let _ = app.run("layer.select", json!({"layer": l.id}));
+    }
+    resp.context_menu(|ui| layer_menu(app, ui, l, false));
+}
+
+/// "{n} selected", a Selection view row's hover text.
+fn selected_text(n: usize) -> String {
+    crate::i18n::fmt("{n} selected", &[("n", &n.to_string())])
 }
 
 /// The layer a row drag carries (egui's drag-and-drop payload).
@@ -646,67 +864,7 @@ fn layer_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, scale: f64, reorder: 
         },
     };
     let resp = resp.on_hover_text(tip);
-    resp.context_menu(|ui| {
-        let _ = app.session.run("layer.select", &json!({"layer": l.id}));
-        let items: &[(&str, &str)] = if l.is_raster() {
-            &[("Zoom To Layer", "layer.zoomTo"), ("Symbology", "ui.pane.symbology")]
-        } else {
-            &[("Zoom To Layer", "layer.zoomTo"), ("Attribute Table", "table.open"), ("Symbology", "ui.pane.symbology")]
-        };
-        for &(label, id) in items {
-            if ui.button(tl!(label)).clicked() {
-                let p = if id.starts_with("ui.") { Value::Null } else { json!({"layer": l.id}) };
-                if id == "ui.pane.symbology" {
-                    app.ui.right = Some(RightPane::Symbology);
-                } else {
-                    let _ = app.run(id, p);
-                }
-                ui.close();
-            }
-        }
-        if !l.is_raster() && ui.button(tl!(if l.labels.enabled { "Turn Labels Off" } else { "Label" })).clicked() {
-            let _ = app.run("labels.enable", json!({"layer": l.id}));
-            ui.close();
-        }
-        if l.is_streamed() && ui.button(tl!("Load All Features")).clicked() {
-            let _ = app.run("layer.loadAll", json!({"layer": l.id}));
-            ui.close();
-        }
-        ui.separator();
-        // Not while the list is filtered: the layer would move among hidden ones.
-        if ui.add_enabled(reorder, egui::Button::new(tl!("Move Up"))).clicked() {
-            let _ = app.run("layer.moveUp", json!({"layer": l.id}));
-            ui.close();
-        }
-        if ui.add_enabled(reorder, egui::Button::new(tl!("Move Down"))).clicked() {
-            let _ = app.run("layer.moveDown", json!({"layer": l.id}));
-            ui.close();
-        }
-        if ui.button(tl!("Rename…")).clicked() {
-            let _ = app.run("ui.dialog", json!({"name": "renameLayer"}));
-            ui.close();
-        }
-        if l.is_raster() {
-            if ui.button(tl!("Export Raster…")).clicked() {
-                let _ = app.run("ui.exportRaster", Value::Null);
-                ui.close();
-            }
-        } else {
-            if ui.button(tl!("Definition Query…")).clicked() {
-                let _ = app.run("ui.dialog", json!({"name": "definitionQuery"}));
-                ui.close();
-            }
-            if ui.button(tl!("Export Features…")).clicked() {
-                let _ = app.run("ui.exportLayer", Value::Null);
-                ui.close();
-            }
-        }
-        ui.separator();
-        if ui.button(tl!("Remove")).clicked() {
-            let _ = app.run("layer.remove", json!({"layer": l.id}));
-            ui.close();
-        }
-    });
+    resp.context_menu(|ui| layer_menu(app, ui, l, reorder));
     // Legend classes.
     if l.expanded
         && let Some(entries) = &raster_legend
@@ -726,6 +884,70 @@ fn layer_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, scale: f64, reorder: 
         }
     }
     Rect::from_min_max(r.min, pos2(r.max.x, ui.min_rect().max.y.max(r.max.y)))
+}
+
+/// A layer's right-click menu (its row in any Layers view). Move Up and Move Down only with
+/// `reorder` (the drawing order view, unfiltered).
+fn layer_menu(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, reorder: bool) {
+    let _ = app.session.run("layer.select", &json!({"layer": l.id}));
+    let items: &[(&str, &str)] = if l.is_raster() {
+        &[("Zoom To Layer", "layer.zoomTo"), ("Symbology", "ui.pane.symbology")]
+    } else {
+        &[("Zoom To Layer", "layer.zoomTo"), ("Attribute Table", "table.open"), ("Symbology", "ui.pane.symbology")]
+    };
+    for &(label, id) in items {
+        if ui.button(tl!(label)).clicked() {
+            let p = if id.starts_with("ui.") { Value::Null } else { json!({"layer": l.id}) };
+            if id == "ui.pane.symbology" {
+                app.ui.right = Some(RightPane::Symbology);
+            } else {
+                let _ = app.run(id, p);
+            }
+            ui.close();
+        }
+    }
+    if !l.is_raster() && ui.button(tl!(if l.labels.enabled { "Turn Labels Off" } else { "Label" })).clicked() {
+        let _ = app.run("labels.enable", json!({"layer": l.id}));
+        ui.close();
+    }
+    if l.is_streamed() && ui.button(tl!("Load All Features")).clicked() {
+        let _ = app.run("layer.loadAll", json!({"layer": l.id}));
+        ui.close();
+    }
+    ui.separator();
+    // Not while the list is filtered: the layer would move among hidden ones.
+    if ui.add_enabled(reorder, egui::Button::new(tl!("Move Up"))).clicked() {
+        let _ = app.run("layer.moveUp", json!({"layer": l.id}));
+        ui.close();
+    }
+    if ui.add_enabled(reorder, egui::Button::new(tl!("Move Down"))).clicked() {
+        let _ = app.run("layer.moveDown", json!({"layer": l.id}));
+        ui.close();
+    }
+    if ui.button(tl!("Rename…")).clicked() {
+        let _ = app.run("ui.dialog", json!({"name": "renameLayer"}));
+        ui.close();
+    }
+    if l.is_raster() {
+        if ui.button(tl!("Export Raster…")).clicked() {
+            let _ = app.run("ui.exportRaster", Value::Null);
+            ui.close();
+        }
+    } else {
+        if ui.button(tl!("Definition Query…")).clicked() {
+            let _ = app.run("ui.dialog", json!({"name": "definitionQuery"}));
+            ui.close();
+        }
+        if ui.button(tl!("Export Features…")).clicked() {
+            let _ = app.run("ui.exportLayer", Value::Null);
+            ui.close();
+        }
+    }
+    ui.separator();
+    if ui.button(tl!("Remove")).clicked() {
+        let _ = app.run("layer.remove", json!({"layer": l.id}));
+        ui.close();
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2760,6 +2982,22 @@ mod tests {
 
     fn layer(app: &RustGisApp, name: &str) -> u32 {
         app.session.map().layer_by_name(name).map(|l| l.id).unwrap_or_default()
+    }
+
+    /// The Data Source view (#301) names a group by a file's name (its path on hover) or a web
+    /// address's host, never the address's credentials or path.
+    #[test]
+    fn sources_are_named_by_file_or_host() {
+        let f = source_name("/data/world/countries.gpkg");
+        assert_eq!((f.label.as_str(), f.hover.as_str()), ("countries.gpkg", "/data/world/countries.gpkg"));
+        assert_eq!(source_name(r"C:\GIS\rivers.shp").label, "rivers.shp");
+        let w = source_name("https://user:secret@tiles.example.com/{z}/{x}/{y}.png?key=abc");
+        assert_eq!((w.label.as_str(), w.hover.as_str()), ("tiles.example.com", "tiles.example.com"));
+        assert!(!w.key.contains("secret") && !w.hover.contains("secret") && !w.label.contains("key="));
+        // Two addresses on one host share a group; two files with one name in other folders don't.
+        assert_eq!(source_name("https://Tiles.Example.com/a").key, source_name("https://tiles.example.com/b").key);
+        assert_ne!(source_name("/a/x.gpkg").key, source_name("/b/x.gpkg").key);
+        assert_eq!(source_name("osm").label, "osm", "a database name");
     }
 
     #[test]

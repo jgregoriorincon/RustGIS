@@ -27,7 +27,13 @@ This guide walks through RustGIS by task. Each page covers one part of the app:
   show or hide it; drag it up or down to change the drawing order; right-click it to zoom to it,
   rename or remove it and more. Type in the box at the top to show only the layers and tables
   whose names contain the text (++escape++ clears it); a selected layer it hides is no longer
-  selected, and layers can be reordered again once it is cleared.
+  selected, and layers can be reordered again once it is cleared. The buttons beside the list's
+  title list the layers by **drawing order**, by **data source** (grouped under the file, web
+  address or database each comes from) or by **selection** (selectable layers first, each with a
+  box to make it selectable or not and its count of selected features); only the drawing order
+  reorders layers. A layer that isn't selectable is skipped by the Select tool's clicks and boxes
+  on the map; Select By Attributes, Select Layer By Location and the attribute table still select
+  in it, since they name the layer.
   The Style and Data tabs act on the layer selected here. The tabs at the top of the left pane
   switch it between **Layers**, **Browser** and **Data Sources** (also in **View › Windows**).
 - **Map view**: one tab per map and layout. The buttons at the top right zoom in, zoom out and go
