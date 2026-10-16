@@ -248,6 +248,13 @@ fn contents(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
     let q = app.ui.layer_filter.trim().to_lowercase();
     let filtering = !q.is_empty();
     let shows = |name: &str| !filtering || name.to_lowercase().contains(&q);
+    // A layer the filter hides stops being the active one, so the Style and Data tabs never act
+    // on a layer out of sight.
+    if let Some(id) = app.session.active_layer
+        && app.session.map().layer(id).is_some_and(|l| !shows(&l.name))
+    {
+        app.session.active_layer = None;
+    }
     // Drawing order header.
     ui.add_space(4.0);
     ui.horizontal_wrapped(|ui| {
