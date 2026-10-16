@@ -5563,3 +5563,58 @@ fn map_rename_keeps_map_names_unique() {
     let name = r["name"].as_str().unwrap_or_default();
     assert_eq!((name.chars().count(), name.ends_with(" 2")), (200, true), "{name}");
 }
+
+#[test]
+fn map_rename_names_any_map_and_what_shows_it_follows() {
+    use rustgis_map::layout::ElementKind;
+    use rustgis_map::presentation::PageKind;
+    let mut s = world();
+    let first = s.map().name.clone();
+    s.run("layout.new", &json!({"page": "a4"})).unwrap();
+    s.run("presentation.new", &Value::Null).unwrap();
+    s.run("presentation.mapPage", &Value::Null).unwrap();
+    s.run("offline.download", &json!({"name": "Paris", "extent": [1.0, 48.0, 4.0, 50.0]})).unwrap();
+    s.run("map.new", &json!({"name": "Second"})).unwrap();
+    // The Browser renames a map that isn't in view, which stays out of view.
+    let r = s.run("map.rename", &json!({"map": first.to_uppercase(), "name": "Atlas"})).unwrap();
+    assert_eq!((r["name"].as_str(), s.map().name.as_str()), (Some("Atlas"), "Second"));
+    let shown = |s: &Session| {
+        let frames: Vec<String> = s.project.layouts[0]
+            .elements
+            .iter()
+            .filter_map(|e| match &e.kind {
+                ElementKind::MapFrame { map, .. } => Some(map.clone()),
+                _ => None,
+            })
+            .collect();
+        let pages: Vec<String> = s.project.presentations[0]
+            .pages
+            .iter()
+            .filter_map(|p| match &p.kind {
+                PageKind::Map { map, .. } => Some(map.clone()),
+                _ => None,
+            })
+            .collect();
+        (frames, pages, s.project.offline_areas[0].map.clone())
+    };
+    assert_eq!(shown(&s), (vec!["Atlas".to_string()], vec!["Atlas".to_string()], "Atlas".to_string()));
+    // One undo step puts the name back everywhere.
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert_eq!(shown(&s), (vec![first.clone()], vec![first.clone()], first.clone()));
+    assert!(s.project.maps.iter().any(|m| m.name == first));
+    assert!(s.run("map.rename", &json!({"map": "Nowhere", "name": "X"})).is_err());
+}
+
+#[test]
+fn layout_names_keep_to_200_characters_with_their_number() {
+    let mut s = world();
+    let long = "é".repeat(300);
+    s.run("layout.new", &json!({"name": long})).unwrap();
+    let r = s.run("layout.new", &json!({"name": long})).unwrap();
+    let name = r["name"].as_str().unwrap_or_default().to_string();
+    assert_eq!((name.chars().count(), name.ends_with(" 2")), (200, true), "{name}");
+    s.run("layout.new", &json!({"name": "Other"})).unwrap();
+    let r = s.run("layout.rename", &json!({"name": "Other", "newName": long})).unwrap();
+    let name = r["name"].as_str().unwrap_or_default();
+    assert_eq!((name.chars().count(), name.ends_with(" 3")), (200, true), "{name}");
+}

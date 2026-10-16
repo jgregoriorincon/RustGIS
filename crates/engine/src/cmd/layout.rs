@@ -8,7 +8,7 @@ use rustgis_map::Rgba;
 use rustgis_map::layout::{ElementKind, FrameShape, Grid, Layout, MIN_ELEMENT_MM, MapSeries, PAGES, fit_scale};
 use serde_json::{Value, json};
 
-use super::{b, f, ps};
+use super::{b, f, numbered, ps};
 use crate::{CmdResult, CommandSpec as C, Session};
 
 /// Most compressed page data a PDF export holds (less in the browser).
@@ -49,17 +49,10 @@ pub fn commands() -> Vec<C> {
         })
         .params(r#"{"name"?: string, "layout"?: name|index (instead of name; default: the open layout)}"#),
         C::new("layout.rename", "Rename Layout", "Browser", |s, p| {
-            let name: String = ps(p, "newName").map(str::trim).filter(|n| !n.is_empty()).ok_or("newName is required")?.chars().take(200).collect();
+            let name = ps(p, "newName").map(str::trim).filter(|n| !n.is_empty()).ok_or("newName is required")?;
             let i = index(s, &by_name(p))?;
             // Unique among the other layouts, so names keep finding one layout.
-            let taken = |n: &str| s.project.layouts.iter().enumerate().any(|(j, l)| j != i && l.name.eq_ignore_ascii_case(n));
-            let mut unique: String = name;
-            let base = unique.clone();
-            let mut k = 1;
-            while taken(&unique) {
-                k += 1;
-                unique = format!("{base} {k}");
-            }
+            let unique = numbered(name, |n| s.project.layouts.iter().enumerate().any(|(j, l)| j != i && l.name.eq_ignore_ascii_case(n)));
             if let Some(l) = s.project.layouts.get_mut(i) {
                 l.name = unique.clone();
             }
@@ -161,15 +154,9 @@ fn element_id(p: &Value) -> Result<u32, String> {
 }
 
 fn unique_name(s: &Session, base: &str) -> String {
-    let base: String = base.trim().chars().take(200).collect();
-    let base = if base.is_empty() { "Layout".to_string() } else { base };
-    let mut name = base.clone();
-    let mut i = 1;
-    while s.project.layouts.iter().any(|l| l.name.eq_ignore_ascii_case(&name)) {
-        i += 1;
-        name = format!("{base} {i}");
-    }
-    name
+    let base = base.trim();
+    let base = if base.is_empty() { "Layout" } else { base };
+    numbered(base, |n| s.project.layouts.iter().any(|l| l.name.eq_ignore_ascii_case(n)))
 }
 
 /// (width, height) in mm from page/orientation/width/height parameters.
