@@ -39,7 +39,7 @@ pub fn commands() -> Vec<C> {
             if s.project.folders.len() == before { Err(format!("{path} isn't connected")) } else { Ok(Value::Null) }
         })
         .params(r#"{"path": folder}"#),
-        C::new("project.connections", "Connections", "Data › Project", |s, _| {
+        C::new("project.connections", "Connections", "Browser", |s, _| {
             let folders: Vec<Value> = s.project.folders.iter().map(|f| json!({"path": f, "available": Path::new(f).is_dir()})).collect();
             Ok(json!({
                 "folders": folders,
