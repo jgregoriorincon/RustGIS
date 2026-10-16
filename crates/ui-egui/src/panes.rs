@@ -466,19 +466,46 @@ fn source_name(src: &str) -> SourceName {
         let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
         let host = host.rsplit('@').next().unwrap_or(host);
         let scheme = scheme.to_ascii_lowercase();
-        // `file:///data/x.gpkg`, or an address with no host: a path.
+        // `file:///data/x.gpkg` (`localhost` is the same as no host), or an address with no host:
+        // a path, its %-escapes decoded.
         if scheme == "file" || host.is_empty() {
-            return path_name(rest);
+            let path = if host.eq_ignore_ascii_case("localhost") { rest.find('/').and_then(|i| rest.get(i..)).unwrap_or("") } else { rest };
+            return path_name(&percent_decoded(path));
         }
-        let name = if DATABASE_SCHEMES.contains(&scheme.as_str()) {
-            let db = rest.split(['?', '#']).next().unwrap_or(rest).split('/').nth(1).filter(|d| !d.is_empty());
-            db.map_or_else(|| host.to_string(), |d| format!("{host}/{d}"))
-        } else {
-            host.to_string()
-        };
-        return SourceName { key: format!("web:{}", name.to_lowercase()), label: name.clone(), hover: name };
+        // Only the host ignores case: a database's name doesn't.
+        let db = DATABASE_SCHEMES
+            .contains(&scheme.as_str())
+            .then(|| rest.split(['?', '#']).next().unwrap_or(rest).split('/').nth(1).filter(|d| !d.is_empty()))
+            .flatten();
+        let key = format!("web:{}/{}", host.to_lowercase(), db.unwrap_or_default());
+        let name = db.map_or_else(|| host.to_string(), |d| format!("{host}/{d}"));
+        return SourceName { key, label: name.clone(), hover: name };
     }
     path_name(src)
+}
+
+/// `%XX` escapes in a `file://` path decoded (`My%20Data.gpkg` is `My Data.gpkg`); a `%` not
+/// followed by two hex digits stays as it is.
+fn percent_decoded(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while let Some(&c) = b.get(i) {
+        // Two hex digits exactly (`from_str_radix` alone would take a sign).
+        let digits = b.get(i + 1..i + 3).filter(|h| h.iter().all(u8::is_ascii_hexdigit));
+        let hex = digits.and_then(|h| std::str::from_utf8(h).ok()).and_then(|h| u8::from_str_radix(h, 16).ok());
+        match (c, hex) {
+            (b'%', Some(v)) => {
+                out.push(v);
+                i += 3;
+            }
+            _ => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// A path as a source group: its last part, with the whole path as hover text.
@@ -3028,6 +3055,14 @@ mod tests {
         assert_eq!(db1.label, "db.example.com:5432/gis");
         assert!(!db1.label.contains("secret") && !db1.key.contains("secret") && !db1.label.contains("sslmode"));
         assert_ne!(db1.key, source_name("postgresql://user@db.example.com:5432/other").key, "two databases, two groups");
+        // The host ignores case, the database doesn't.
+        assert_eq!(db1.key, source_name("postgresql://DB.Example.com:5432/gis").key);
+        assert_ne!(db1.key, source_name("postgresql://db.example.com:5432/GIS").key);
+        // file://localhost is no host; %-escapes are decoded, a stray % stays.
+        assert_eq!(source_name("file://localhost/data/world/countries.gpkg").key, f.key);
+        assert_eq!(source_name("file:///data/My%20Data.gpkg").label, "My Data.gpkg");
+        assert_eq!(source_name("file:///data/100%+x%2.gpkg").label, "100%+x%2.gpkg");
+        assert_eq!(source_name("file://user@localhost/x.gpkg").label, "x.gpkg");
     }
 
     #[test]
