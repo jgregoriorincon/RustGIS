@@ -910,19 +910,22 @@ struct RowName {
     row_h: f32,
     /// The width it was given.
     room: f32,
-    /// Whether it was cut with "…" (the tooltip then shows it whole).
+    /// Whether some of it doesn't show (the tooltip then shows it whole).
     elided: bool,
 }
 
 /// A Layers pane row's name laid out in `room` points: on a second line when it doesn't fit (a
 /// word too long for a line is broken anywhere), then cut with "…".
 fn row_name(ui: &Ui, name: String, font: egui::FontId, room: f32) -> RowName {
-    let mut job = egui::text::LayoutJob::simple(name, font, egui::Color32::PLACEHOLDER, room.max(40.0));
+    // Laid out in the room it is clipped to, so the two agree; a point at least.
+    let room = room.max(1.0);
+    let mut job = egui::text::LayoutJob::simple(name, font, egui::Color32::PLACEHOLDER, room);
     job.wrap.max_rows = 2;
     let galley = ui.painter().layout_job(job);
     let line_h = galley.size().y / galley.rows.len().max(1) as f32;
     let row_h = (galley.size().y + 26.0 - line_h).max(26.0);
-    let elided = galley.elided;
+    // Cut with "…", or (a glyph wider than the room) by the clip: either way, not all shows.
+    let elided = galley.elided || galley.size().x > room + 0.5;
     RowName { galley, line_h, row_h, room, elided }
 }
 
@@ -930,7 +933,7 @@ impl RowName {
     /// Paints the name from `x` in row `r`, its first line on the icons' line (13 points down),
     /// clipped to its room: never under the row's badge, count or the pane's edge.
     fn paint(self, ui: &Ui, r: Rect, x: f32, color: egui::Color32) {
-        let clip = Rect::from_min_max(pos2(x, r.min.y), pos2(x + self.room.max(0.0), r.max.y));
+        let clip = Rect::from_min_max(pos2(x, r.min.y), pos2(x + self.room, r.max.y));
         ui.painter().with_clip_rect(clip).galley(pos2(x, r.min.y + 13.0 - self.line_h / 2.0), self.galley, color);
     }
 }
