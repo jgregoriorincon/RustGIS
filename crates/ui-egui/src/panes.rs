@@ -648,14 +648,20 @@ fn selection_groups(app: &mut RustGisApp, ui: &mut Ui, layers: &[Layer], shows: 
 /// (`layer.selectable`), its name, and how many of its features are selected with a ✕ that clears
 /// them (`select.rows`). A click makes it the active layer; right-click opens its menu.
 fn selection_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, t: &Tokens) {
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::click());
+    let count = l.selection.len();
+    // The name starts at 48 and stops short of the count and its ✕.
+    let counted = if count > 0 { 22.0 + 4.0 + crate::widgets::text_w(ui, &count.to_string(), regular(12.0)) + 8.0 } else { 0.0 };
+    let color = if l.selectable { t.text } else { t.text_disabled };
+    let (name, line_h, row_h) = row_name(ui, l.name.clone(), regular(12.5), ui.available_width() - 48.0 - 8.0 - counted);
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
+    let cy = r.min.y + 13.0;
     if app.session.active_layer == Some(l.id) {
         ui.painter().rect_filled(r.shrink2(vec2(4.0, 1.0)), CornerRadius::same(5), t.selection);
     } else if resp.hovered() {
         ui.painter().rect_filled(r.shrink2(vec2(4.0, 1.0)), CornerRadius::same(5), t.hover);
     }
     // Lined up with the other views' checkboxes and names.
-    let cb = Rect::from_center_size(pos2(r.min.x + 33.0, r.center().y), vec2(14.0, 14.0));
+    let cb = Rect::from_center_size(pos2(r.min.x + 33.0, cy), vec2(14.0, 14.0));
     let cb_resp = ui.interact(cb, egui::Id::new(("layer_selectable", l.id)), Sense::click());
     cb_resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, l.selectable, tl!("Selectable")));
     visibility_box(ui, cb, l.selectable, t);
@@ -664,10 +670,8 @@ fn selection_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, t: &Tokens) {
     if cb_resp.on_hover_text(tl!("Selectable on the map: the Select tool picks its features")).clicked() {
         let _ = app.run("layer.selectable", json!({"layer": l.id}));
     }
-    let count = l.selection.len();
-    let mut right = r.max.x - 8.0;
     if count > 0 {
-        let cr = Rect::from_center_size(pos2(right - 11.0, r.center().y), vec2(22.0, 22.0));
+        let cr = Rect::from_center_size(pos2(r.max.x - 8.0 - 11.0, cy), vec2(22.0, 22.0));
         let clear = ui.interact(cr, egui::Id::new(("layer_selection_clear", l.id)), Sense::click());
         clear.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Clear selection")));
         if clear.hovered() {
@@ -678,16 +682,20 @@ fn selection_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, t: &Tokens) {
             let _ = app.run("select.rows", json!({"layer": l.id, "rows": []}));
         }
         let g = ui.painter().layout_no_wrap(count.to_string(), regular(12.0), t.text_dim);
-        right = cr.min.x - 4.0 - g.size().x;
-        ui.painter().galley(pos2(right, r.center().y - g.size().y / 2.0), g, t.text_dim);
-        right -= 8.0;
+        ui.painter().galley(pos2(cr.min.x - 4.0 - g.size().x, cy - g.size().y / 2.0), g, t.text_dim);
     }
-    let x = r.min.x + 48.0;
-    let color = if l.selectable { t.text } else { t.text_disabled };
-    let name = ui.painter().layout(l.name.clone(), regular(12.5), color, (right - x).max(0.0));
-    let (clip, at) = (Rect::from_min_max(r.min, pos2(right, r.max.y)), pos2(x, r.center().y - name.size().y / 2.0));
-    ui.painter().with_clip_rect(clip).galley(at, name, color);
-    let resp = if count > 0 { resp.on_hover_text(selected_text(count)) } else { resp };
+    let elided = name.elided;
+    ui.painter().galley(pos2(r.min.x + 48.0, cy - line_h / 2.0), name, color);
+    let tip = match (elided, count > 0) {
+        (true, true) => Some(format!("{}\n{}", l.name, selected_text(count))),
+        (true, false) => Some(l.name.clone()),
+        (false, true) => Some(selected_text(count)),
+        (false, false) => None,
+    };
+    let resp = match tip {
+        Some(tip) => resp.on_hover_text(tip),
+        None => resp,
+    };
     if resp.clicked() {
         let _ = app.run("layer.select", json!({"layer": l.id}));
     }
@@ -712,45 +720,47 @@ fn service_group_row(
     let mut children: Vec<&Layer> = layers.iter().filter(|l| group.children.iter().any(|c| c.layer == l.id)).collect();
     children.sort_by_cached_key(|l| (l.name.to_lowercase(), l.id));
     ui.push_id(("service_group", group.id), |ui| {
-        ui.horizontal(|ui| {
-            ui.add_space(8.0);
-            let (rect, arrow) = ui.allocate_exact_size(vec2(18.0, 26.0), Sense::click());
-            icons::paint(
-                ui.painter(),
-                rect.shrink2(vec2(2.0, 6.0)),
-                if group.expanded { "chevron_down" } else { "chevron_right" },
-                t.text_dim,
-                t.accent,
-            );
-            if arrow.clicked() {
-                let _ = app.run("service.group", json!({"group":group.id,"expanded":!group.expanded}));
+        // Laid out as a layer row: the arrow, the box, the icon and the name (two lines at most)
+        // in the same places.
+        let (name, line_h, row_h) = row_name(ui, group.name.clone(), semibold(12.5), ui.available_width() - NAME_X - 8.0);
+        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &group.name));
+        if resp.hovered() {
+            ui.painter().rect_filled(r.shrink2(vec2(4.0, 1.0)), CornerRadius::same(5), t.hover);
+        }
+        let cy = r.min.y + 13.0;
+        let ar = Rect::from_center_size(pos2(r.min.x + 16.0, cy), vec2(14.0, 14.0));
+        icons::paint(ui.painter(), ar, if group.expanded { "chevron_down" } else { "chevron_right" }, t.text_dim, t.accent);
+        let arrow = ui.interact(ar, egui::Id::new("expand"), Sense::click());
+        let visible = !children.is_empty() && children.iter().all(|l| l.visible);
+        let cb = Rect::from_center_size(pos2(r.min.x + 33.0, cy), vec2(14.0, 14.0));
+        let cb_resp = ui.interact(cb, egui::Id::new("visible"), Sense::click());
+        cb_resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, visible, tl!("Show or hide")));
+        visibility_box(ui, cb, visible, t);
+        icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 57.0, cy), vec2(18.0, 16.0)), "map", t.icon, t.accent);
+        let elided = name.elided;
+        ui.painter().galley(pos2(r.min.x + NAME_X, cy - line_h / 2.0), name, t.text);
+        if cb_resp.on_hover_text(tl!("Show or hide")).clicked() {
+            let _ = app.run("service.group", json!({"group":group.id,"visible":!visible}));
+        } else if arrow.clicked() || resp.double_clicked() {
+            let _ = app.run("service.group", json!({"group":group.id,"expanded":!group.expanded}));
+        }
+        let resp = if elided { resp.on_hover_text(&group.name) } else { resp };
+        resp.context_menu(|ui| {
+            if ui.add_enabled(app.ui.service_import.is_none(), egui::Button::new(tl!("Refresh"))).clicked() {
+                let _ = app.run("ui.refreshService", json!({"group":group.id}));
+                ui.close();
             }
-            let mut visible = !children.is_empty() && children.iter().all(|l| l.visible);
-            if ui.checkbox(&mut visible, "").changed() {
-                let _ = app.run("service.group", json!({"group":group.id,"visible":visible}));
+            if ui.button(tl!("Rename…")).clicked() {
+                let _ = app.run("ui.dialog", json!({"name":"renameServiceGroup"}));
+                app.dialogs.layer = group.id.to_string();
+                app.dialogs.text = group.name.clone();
+                ui.close();
             }
-            let (rect, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
-            icons::paint(ui.painter(), rect, "map", t.icon, t.accent);
-            let response = ui.add(egui::Label::new(egui::RichText::new(&group.name).font(semibold(12.5))).sense(Sense::click()));
-            if response.double_clicked() {
-                let _ = app.run("service.group", json!({"group":group.id,"expanded":!group.expanded}));
+            if ui.button(tl!("Remove")).clicked() {
+                let _ = app.run("service.group", json!({"group":group.id,"remove":true}));
+                ui.close();
             }
-            response.context_menu(|ui| {
-                if ui.add_enabled(app.ui.service_import.is_none(), egui::Button::new(tl!("Refresh"))).clicked() {
-                    let _ = app.run("ui.refreshService", json!({"group":group.id}));
-                    ui.close();
-                }
-                if ui.button(tl!("Rename…")).clicked() {
-                    let _ = app.run("ui.dialog", json!({"name":"renameServiceGroup"}));
-                    app.dialogs.layer = group.id.to_string();
-                    app.dialogs.text = group.name.clone();
-                    ui.close();
-                }
-                if ui.button(tl!("Remove")).clicked() {
-                    let _ = app.run("service.group", json!({"group":group.id,"remove":true}));
-                    ui.close();
-                }
-            });
         });
         if group.expanded || filtering {
             ui.indent("children", |ui| {
@@ -830,28 +840,29 @@ fn visibility_box(ui: &Ui, cb: Rect, visible: bool, t: &Tokens) {
 /// shows or hides it; right-click sets its opacity, moves it up or down (not with `reorder` off:
 /// the list is filtered), or removes it.
 fn tile_row(app: &mut RustGisApp, ui: &mut Ui, i: usize, count: usize, reorder: bool, tile: &TileLayer, t: &Tokens) {
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::click());
+    let name = if tile.overlay { format!("{} · {}", tile.name, tl!("overlay")) } else { tile.name.clone() };
+    let (galley, line_h, row_h) = row_name(ui, name, regular(12.5), ui.available_width() - NAME_X - 8.0);
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
     if resp.hovered() {
         ui.painter().rect_filled(r.shrink2(vec2(4.0, 1.0)), CornerRadius::same(5), t.hover);
     }
     // Lined up with the layer rows' checkboxes, icons and names.
+    let cy = r.min.y + 13.0;
     let mut x = r.min.x + 26.0;
-    let cb = Rect::from_center_size(pos2(x + 7.0, r.center().y), vec2(14.0, 14.0));
+    let cb = Rect::from_center_size(pos2(x + 7.0, cy), vec2(14.0, 14.0));
     let cb_resp = ui.interact(cb, egui::Id::new(("tile_vis", i)), Sense::click()).on_hover_text(tl!("Show or hide"));
     visibility_box(ui, cb, tile.visible, t);
     x += 22.0;
-    icons::paint(ui.painter(), Rect::from_center_size(pos2(x + 9.0, r.center().y), vec2(18.0, 16.0)), "basemap", t.icon, t.accent);
+    icons::paint(ui.painter(), Rect::from_center_size(pos2(x + 9.0, cy), vec2(18.0, 16.0)), "basemap", t.icon, t.accent);
     x += 24.0;
-    let name = if tile.overlay { format!("{} · {}", tile.name, tl!("overlay")) } else { tile.name.clone() };
     let color = if tile.visible && tile.opacity > 0.0 { t.text } else { t.text_disabled };
-    let room = (r.max.x - 8.0 - x).max(0.0);
-    let galley = ui.painter().layout(name, regular(12.5), color, room);
-    ui.painter().with_clip_rect(r).galley(pos2(x, r.center().y - galley.size().y / 2.0), galley, color);
+    let elided = galley.elided;
+    ui.painter().galley(pos2(x, cy - line_h / 2.0), galley, color);
     let mut action: Option<(&str, Value)> = None;
     if cb_resp.clicked() {
         action = Some(("map.setTiles", json!({"index": i, "visible": !tile.visible})));
     }
-    let resp = resp.on_hover_text(&tile.url);
+    let resp = resp.on_hover_text(if elided { format!("{}\n{}", tile.name, tile.url) } else { tile.url.clone() });
     resp.context_menu(|ui| {
         ui.horizontal(|ui| {
             ui.label(tl!("Opacity"));
@@ -880,13 +891,40 @@ fn tile_row(app: &mut RustGisApp, ui: &mut Ui, i: usize, count: usize, reorder: 
     }
 }
 
+/// Where a layer row's name starts: after the expand arrow, the visibility box and the symbol.
+const NAME_X: f32 = 10.0 + 16.0 + 22.0 + 24.0;
+
+/// A Layers pane row's name laid out in `room` points: on a second line when it doesn't fit, then
+/// cut with "…". Returns it, the height of one of its lines and the row's height (26 points for
+/// one line, a line more for two). The row's icons line up with the first line, 13 points down.
+fn row_name(ui: &Ui, name: String, font: egui::FontId, room: f32) -> (std::sync::Arc<egui::Galley>, f32, f32) {
+    let mut job = egui::text::LayoutJob::simple(name, font, egui::Color32::PLACEHOLDER, room.max(40.0));
+    job.wrap.max_rows = 2;
+    let galley = ui.painter().layout_job(job);
+    let line_h = galley.size().y / galley.rows.len().max(1) as f32;
+    let row_h = (galley.size().y + 26.0 - line_h).max(26.0);
+    (galley, line_h, row_h)
+}
+
 /// A layer's row and, expanded, its legend; returns the rectangle of both. With `reorder` off
 /// (the list is filtered or children are sorted by name) the row can't be dragged.
 fn layer_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, scale: f64, reorder: bool, t: &Tokens) -> Rect {
     let active = app.session.active_layer == Some(l.id);
-    let row_h = 26.0;
+    // The name takes two lines when it must (the tooltip has it whole when cut), leaving room for
+    // the selection badge.
+    let badge = (!l.selection.is_empty()).then(|| {
+        let text = l.selection.len().to_string();
+        let w = crate::widgets::text_w(ui, &text, regular(10.5)) + 10.0;
+        (text, w)
+    });
+    let name = if l.definition_query.is_some() { format!("{}  {}", l.name, tl!("(filtered)")) } else { l.name.clone() };
+    let font = if active { semibold(12.5) } else { regular(12.5) };
+    let room = ui.available_width() - NAME_X - badge.as_ref().map_or(8.0, |(_, w)| w + 18.0);
+    let (galley, line_h, row_h) = row_name(ui, name, font, room);
     let sense = if reorder { Sense::click_and_drag() } else { Sense::click() };
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), sense);
+    // The icons and the badge line up with the name's first line.
+    let cy = r.min.y + 13.0;
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &l.name));
     if reorder && resp.drag_started_by(egui::PointerButton::Primary) {
         egui::DragAndDrop::set_payload(ui.ctx(), DraggedLayer(l.id));
@@ -904,19 +942,19 @@ fn layer_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, scale: f64, reorder: 
         Some(rl) => !rl.is_empty(),
         None => !l.renderer.legend().is_empty(),
     };
-    let ar = Rect::from_center_size(pos2(x + 6.0, r.center().y), vec2(14.0, 14.0));
+    let ar = Rect::from_center_size(pos2(x + 6.0, cy), vec2(14.0, 14.0));
     if has_legend {
         icons::paint(ui.painter(), ar, if l.expanded { "chevron_down" } else { "chevron_right" }, t.text_dim, t.accent);
     }
     let ar_resp = ui.interact(ar, egui::Id::new(("expand", l.id)), Sense::click());
     x += 16.0;
     // Visibility checkbox.
-    let cb = Rect::from_center_size(pos2(x + 7.0, r.center().y), vec2(14.0, 14.0));
+    let cb = Rect::from_center_size(pos2(x + 7.0, cy), vec2(14.0, 14.0));
     let cb_resp = ui.interact(cb, egui::Id::new(("vis", l.id)), Sense::click());
     visibility_box(ui, cb, l.visible, t);
     x += 22.0;
     // Symbol patch (single symbol) or layer-type icon.
-    let pr = Rect::from_center_size(pos2(x + 9.0, r.center().y), vec2(18.0, 16.0));
+    let pr = Rect::from_center_size(pos2(x + 9.0, cy), vec2(18.0, 16.0));
     if l.is_raster() {
         icons::paint(ui.painter(), pr, "raster_layer", t.icon, t.accent);
     } else if has_legend {
@@ -939,12 +977,10 @@ fn layer_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, scale: f64, reorder: 
     } else {
         t.text
     };
-    let name = if l.definition_query.is_some() { format!("{}  {}", l.name, tl!("(filtered)")) } else { l.name.clone() };
-    ui.painter().text(pos2(x, r.center().y), Align2::LEFT_CENTER, &name, if active { semibold(12.5) } else { regular(12.5) }, color);
-    if !l.selection.is_empty() {
-        let badge = format!("{}", l.selection.len());
-        let bw = crate::widgets::text_w(ui, &badge, regular(10.5)) + 10.0;
-        let br = Rect::from_center_size(pos2(r.max.x - 12.0 - bw / 2.0, r.center().y), vec2(bw, 16.0));
+    let elided = galley.elided;
+    ui.painter().galley(pos2(x, cy - line_h / 2.0), galley, color);
+    if let Some((badge, bw)) = badge {
+        let br = Rect::from_center_size(pos2(r.max.x - 12.0 - bw / 2.0, cy), vec2(bw, 16.0));
         ui.painter().rect_filled(br, CornerRadius::same(8), egui::Color32::from_rgb(0x00, 0xA8, 0xC0));
         ui.painter().text(br.center(), Align2::CENTER_CENTER, badge, regular(10.5), egui::Color32::WHITE);
     }
@@ -1012,6 +1048,8 @@ fn layer_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, scale: f64, reorder: 
             ),
         },
     };
+    // A name cut short shows whole above the details.
+    let tip = if elided { format!("{}\n{tip}", l.name) } else { tip };
     let resp = resp.on_hover_text(tip);
     resp.context_menu(|ui| layer_menu(app, ui, l, reorder));
     // Legend classes.
