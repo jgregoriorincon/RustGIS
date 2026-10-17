@@ -5941,6 +5941,12 @@ fn bookmarks_are_managed_in_place_on_any_map() {
     }
     s.run("bookmark.import", &json!({"text": old.to_string()})).unwrap();
     assert_eq!(described(&s).as_deref(), Some(""));
+    // Unnamed, a bookmark takes the next `Bookmark N` free, never `Bookmark N 2` (the New
+    // Bookmark dialog offers the same name).
+    let n = s.map().bookmarks.len();
+    s.run("bookmark.add", &json!({"name": format!("Bookmark {}", n + 2)})).unwrap();
+    assert_eq!(super::cmd::navigate::new_bookmark_name(s.map()), format!("Bookmark {}", n + 3));
+    assert_eq!(s.run("bookmark.add", &Value::Null).unwrap()["name"], format!("Bookmark {}", n + 3));
 }
 
 #[test]

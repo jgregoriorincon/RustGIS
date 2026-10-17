@@ -317,8 +317,11 @@ fn basemap(s: &mut Session, p: &Value) -> CmdResult {
 
 fn add_bookmark(s: &mut Session, p: &Value) -> CmdResult {
     let mi = map_at(s, p)?;
-    let count = s.project.maps.get(mi).map_or(0, |m| m.bookmarks.len());
-    let base = ps(p, "name").map(str::trim).filter(|n| !n.is_empty()).map_or_else(|| format!("Bookmark {}", count + 1), str::to_string);
+    let given = ps(p, "name").map(str::trim).filter(|n| !n.is_empty());
+    let base = match given {
+        Some(n) => n.to_string(),
+        None => s.project.maps.get(mi).map_or_else(|| "Bookmark 1".into(), new_bookmark_name),
+    };
     // A taken name is numbered, never replacing the bookmark that has it (#351).
     let name = unique_bookmark_name(s, mi, None, &base);
     let description: String = ps(p, "description").unwrap_or_default().trim().chars().take(MAX_DESCRIPTION).collect();
@@ -389,6 +392,15 @@ fn unique_bookmark_name(s: &Session, mi: usize, own: Option<usize>, base: &str) 
     let marks = s.project.maps.get(mi).map(|m| m.bookmarks.as_slice()).unwrap_or_default();
     let taken = |n: &str| marks.iter().enumerate().any(|(j, b)| Some(j) != own && b.name.eq_ignore_ascii_case(n));
     super::numbered_within(base, MAX_BOOKMARK_NAME, taken)
+}
+
+/// The name a new bookmark of `map` gets unless one is given: `Bookmark N`, N one past the
+/// bookmarks it has, or the next N free (after a delete, or a bookmark named so by hand).
+pub fn new_bookmark_name(map: &Map) -> String {
+    let count = map.bookmarks.len();
+    let free = |n: &String| !map.bookmarks.iter().any(|b| b.name.eq_ignore_ascii_case(n));
+    // Of count + 1 names, the count bookmarks can't hold them all.
+    (count + 1..=2 * count + 1).map(|i| format!("Bookmark {i}")).find(free).unwrap_or_else(|| format!("Bookmark {}", count + 1))
 }
 
 /// The longest bookmark name and description kept.
