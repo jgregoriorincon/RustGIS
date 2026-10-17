@@ -731,10 +731,11 @@ fn service_group_row(
         let cy = r.min.y + 13.0;
         let ar = Rect::from_center_size(pos2(r.min.x + 16.0, cy), vec2(14.0, 14.0));
         icons::paint(ui.painter(), ar, if group.expanded { "chevron_down" } else { "chevron_right" }, t.text_dim, t.accent);
-        let arrow = ui.interact(ar, egui::Id::new("expand"), Sense::click());
+        // `interact` takes the id as it is (not under the `push_id`): each group's own.
+        let arrow = ui.interact(ar, egui::Id::new(("group_expand", group.id)), Sense::click());
         let visible = !children.is_empty() && children.iter().all(|l| l.visible);
         let cb = Rect::from_center_size(pos2(r.min.x + 33.0, cy), vec2(14.0, 14.0));
-        let cb_resp = ui.interact(cb, egui::Id::new("visible"), Sense::click());
+        let cb_resp = ui.interact(cb, egui::Id::new(("group_visible", group.id)), Sense::click());
         cb_resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, visible, tl!("Show or hide")));
         visibility_box(ui, cb, visible, t);
         icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 57.0, cy), vec2(18.0, 16.0)), "map", t.icon, t.accent);
