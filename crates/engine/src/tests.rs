@@ -5947,6 +5947,18 @@ fn bookmarks_are_managed_in_place_on_any_map() {
     s.run("bookmark.add", &json!({"name": format!("Bookmark {}", n + 2)})).unwrap();
     assert_eq!(super::cmd::navigate::new_bookmark_name(s.map()), format!("Bookmark {}", n + 3));
     assert_eq!(s.run("bookmark.add", &Value::Null).unwrap()["name"], format!("Bookmark {}", n + 3));
+    // "Bookmark 03" isn't "Bookmark 3".
+    s.run("bookmark.add", &json!({"name": format!("Bookmark 0{}", n + 4)})).unwrap();
+    assert_eq!(super::cmd::navigate::new_bookmark_name(s.map()), format!("Bookmark {}", n + 4));
+    // A map keeps at most 10,000 bookmarks, added or imported.
+    let camera = s.map().camera;
+    let marks = &mut s.map_mut().bookmarks;
+    while marks.len() < 10_000 {
+        let name = format!("Bookmark {}", marks.len() + 1);
+        marks.push(rustgis_map::Bookmark::new(name, camera));
+    }
+    assert!(s.run("bookmark.add", &Value::Null).is_err());
+    assert_eq!(s.map().bookmarks.len(), 10_000);
 }
 
 #[test]

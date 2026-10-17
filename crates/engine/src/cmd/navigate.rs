@@ -317,6 +317,9 @@ fn basemap(s: &mut Session, p: &Value) -> CmdResult {
 
 fn add_bookmark(s: &mut Session, p: &Value) -> CmdResult {
     let mi = map_at(s, p)?;
+    if s.project.maps.get(mi).is_some_and(|m| m.bookmarks.len() >= MAX_BOOKMARKS) {
+        return Err(format!("a map keeps at most {MAX_BOOKMARKS} bookmarks"));
+    }
     let given = ps(p, "name").map(str::trim).filter(|n| !n.is_empty());
     let base = match given {
         Some(n) => n.to_string(),
@@ -398,16 +401,24 @@ fn unique_bookmark_name(s: &Session, mi: usize, own: Option<usize>, base: &str) 
 /// bookmarks it has, or the next N free (after a delete, or a bookmark named so by hand).
 pub fn new_bookmark_name(map: &Map) -> String {
     let count = map.bookmarks.len();
-    let free = |n: &String| !map.bookmarks.iter().any(|b| b.name.eq_ignore_ascii_case(n));
-    // Of count + 1 names, the count bookmarks can't hold them all.
-    (count + 1..=2 * count + 1).map(|i| format!("Bookmark {i}")).find(free).unwrap_or_else(|| format!("Bookmark {}", count + 1))
+    // The numbers taken, in one pass (names compare ignoring case, as `bookmark_at` does).
+    let taken: std::collections::HashSet<usize> = map
+        .bookmarks
+        .iter()
+        .filter_map(|b| b.name.get(..9).filter(|p| p.eq_ignore_ascii_case("bookmark ")).and_then(|_| b.name.get(9..)))
+        .filter(|n| !n.starts_with('+') && !n.starts_with('0'))
+        .filter_map(|n| n.parse().ok())
+        .collect();
+    // Of count + 1 numbers, the count bookmarks can't hold them all.
+    let n = (count + 1..=2 * count + 1).find(|i| !taken.contains(i)).unwrap_or(count + 1);
+    format!("Bookmark {n}")
 }
 
 /// The longest bookmark name and description kept.
 const MAX_BOOKMARK_NAME: usize = 120;
 const MAX_DESCRIPTION: usize = 2_000;
 
-/// Most bookmarks a map keeps from imported files.
+/// Most bookmarks a map keeps.
 const MAX_BOOKMARKS: usize = 10_000;
 
 /// The map's bookmarks as a bookmarks file. Places are lon/lat and metres per pixel, so they
