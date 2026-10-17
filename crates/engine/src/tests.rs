@@ -541,12 +541,14 @@ fn custom_projections_switch_keep_scale_query_and_render() {
     // Bookmarks follow a projection switch, and the extent history doesn't replay old cameras.
     s.run("map.projection", &json!({"type": "mercator"})).unwrap();
     s.run("map.goToXY", &json!({"lon": 10.0, "lat": 50.0, "scale": 5_000_000})).unwrap();
-    s.run("bookmark.add", &json!({"name": "Europe"})).unwrap();
+    // The sample has a "Europe" already: the new one is numbered (#351), and found by its name.
+    let europe = s.run("bookmark.add", &json!({"name": "Europe"})).unwrap()["name"].clone();
+    assert_eq!(europe, "Europe 2");
     s.run("map.goToXY", &json!({"lon": -100.0, "lat": 40.0})).unwrap();
     assert!(s.can_extent_back());
     s.run("map.projection", &json!({"type": "europeEqualArea"})).unwrap();
     assert!(!s.can_extent_back(), "history from Web Mercator is dropped");
-    s.run("bookmark.go", &json!({"name": "Europe"})).unwrap();
+    s.run("bookmark.go", &json!({"name": europe})).unwrap();
     let c = s.map().center_lonlat();
     assert!((c.x - 10.0).abs() < 1e-6 && (c.y - 50.0).abs() < 1e-6, "{c:?}");
     assert!((s.scale() / 5_000_000.0 - 1.0).abs() < 0.02, "{}", s.scale());
@@ -5840,6 +5842,80 @@ fn bookmarks_export_and_import_across_projections() {
     let junk = json!({"bookmarks": [{"name": "Bad", "lon": 500, "lat": 0, "metresPerPixel": 1}, {"name": "", "lon": 0, "lat": 0, "metresPerPixel": 1}]});
     assert!(s.run("bookmark.import", &json!({"text": junk.to_string()})).is_err());
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The bookmark manager's commands (#351): names stay unique, a bookmark is renamed, updated,
+/// described and moved in place, Pan To keeps the scale, and any map's bookmarks are reachable.
+#[test]
+fn bookmarks_are_managed_in_place_on_any_map() {
+    let mut s = world();
+    let names = |s: &Session| s.map().bookmarks.iter().map(|b| b.name.clone()).collect::<Vec<_>>();
+    let first = names(&s);
+    assert!(first.contains(&"Europe".to_string()), "{first:?}");
+    // A taken name is numbered instead of replacing the bookmark that has it.
+    assert_eq!(s.run("bookmark.add", &json!({"name": "europe"})).unwrap()["name"], "europe 2");
+    assert_eq!(s.run("bookmark.add", &json!({"name": "Europe"})).unwrap()["name"], "Europe 3");
+    assert_eq!(names(&s).len(), first.len() + 2);
+    // Rename: unique among the others, its own name in another case is fine, one undo step.
+    assert_eq!(s.run("bookmark.rename", &json!({"name": "Europe 3", "newName": "World"})).unwrap()["name"], "World 2");
+    assert_eq!(s.run("bookmark.rename", &json!({"name": "World 2", "newName": "WORLD 2"})).unwrap()["name"], "WORLD 2");
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert!(names(&s).contains(&"World 2".to_string()));
+    assert!(s.run("bookmark.rename", &json!({"name": "Nowhere", "newName": "X"})).is_err());
+    assert!(s.run("bookmark.rename", &json!({"name": "World 2", "newName": "  "})).is_err());
+    // Update takes the current view, keeping the bookmark's place in the list.
+    let at = names(&s).iter().position(|n| n == "Africa");
+    s.run("map.goToXY", &json!({"lon": 100.0, "lat": -5.0, "scale": 2_000_000})).unwrap();
+    s.run("bookmark.update", &json!({"name": "africa"})).unwrap();
+    assert_eq!(names(&s).iter().position(|n| n == "Africa"), at);
+    assert_eq!(s.map().bookmarks.iter().find(|b| b.name == "Africa").map(|b| b.camera), Some(s.map().camera));
+    // A description, trimmed and kept to 2000 characters; empty clears it.
+    s.run("bookmark.describe", &json!({"name": "Africa", "description": "  Indonesia, really  "})).unwrap();
+    assert_eq!(s.map().bookmarks.iter().find(|b| b.name == "Africa").map(|b| b.description.as_str()), Some("Indonesia, really"));
+    s.run("bookmark.describe", &json!({"name": "Africa", "description": "é".repeat(3000)})).unwrap();
+    assert_eq!(s.map().bookmarks.iter().find(|b| b.name == "Africa").map(|b| b.description.chars().count()), Some(2000));
+    // Move: to the front, and past the end to the back.
+    s.run("bookmark.move", &json!({"name": "Africa", "to": 0})).unwrap();
+    assert_eq!(names(&s).first().map(String::as_str), Some("Africa"));
+    s.run("bookmark.move", &json!({"name": "Africa", "to": 999})).unwrap();
+    assert_eq!(names(&s).last().map(String::as_str), Some("Africa"));
+    for p in [json!({"name": "Africa"}), json!({"name": "Africa", "to": -1}), json!({"name": "Africa", "to": "x"})] {
+        assert!(s.run("bookmark.move", &p).is_err(), "{p}");
+    }
+    // Pan To moves to the place at the current scale; Go To takes the bookmark's scale too.
+    s.run("map.goToXY", &json!({"lon": 0.0, "lat": 0.0, "scale": 40_000_000})).unwrap();
+    let scale = s.scale();
+    s.run("bookmark.go", &json!({"name": "Europe", "pan": true})).unwrap();
+    assert!((s.scale() / scale - 1.0).abs() < 1e-6, "Pan To keeps the scale");
+    s.run("bookmark.go", &json!({"name": "Europe"})).unwrap();
+    assert!((s.scale() / scale - 1.0).abs() > 0.01, "Go To takes the bookmark's scale");
+    // Another map's bookmark is reached by `map`, and going to it brings that map into view.
+    let world_map = s.map().name.clone();
+    s.run("map.new", &json!({"name": "Second"})).unwrap();
+    assert!(s.run("bookmark.go", &json!({"name": "Europe"})).is_err(), "not on this map");
+    s.run("bookmark.add", &json!({"name": "Here", "map": world_map, "description": "added from Second"})).unwrap();
+    // Another map's bookmark moves the map in view to its place (as ArcGIS Pro does): Second
+    // stays in view, at the place and scale World shows for it.
+    s.run("bookmark.go", &json!({"name": "Here", "map": world_map})).unwrap();
+    assert_eq!(s.map().name, "Second");
+    let (there, there_scale) = (s.map().center_lonlat(), s.scale());
+    assert!(s.run("bookmark.go", &json!({"name": "Here", "map": 0})).is_err(), "a map that isn't a name");
+    // Update takes the view on screen, so only with the bookmark's map in view; describing works
+    // from anywhere.
+    assert!(s.run("bookmark.update", &json!({"name": "Here", "map": world_map})).is_err());
+    s.run("bookmark.describe", &json!({"name": "Here", "map": world_map, "description": "added from Second"})).unwrap();
+    s.run("map.activate", &json!({"name": world_map})).unwrap();
+    s.run("bookmark.go", &json!({"name": "Here"})).unwrap();
+    let here = s.map().center_lonlat();
+    assert!((here.x - there.x).abs() < 1e-6 && (here.y - there.y).abs() < 1e-6, "{here:?} {there:?}");
+    assert!((s.scale() / there_scale - 1.0).abs() < 0.02, "{} {there_scale}", s.scale());
+    // The description travels in a bookmarks file.
+    let file = super::cmd::navigate::bookmarks_file(s.map()).unwrap();
+    let text = String::from_utf8(file).unwrap();
+    assert!(text.contains("added from Second"), "{text}");
+    s.run("bookmark.remove", &json!({"name": "Here"})).unwrap();
+    s.run("bookmark.import", &json!({"text": text})).unwrap();
+    assert_eq!(s.map().bookmarks.iter().find(|b| b.name == "Here").map(|b| b.description.as_str()), Some("added from Second"));
 }
 
 #[test]
