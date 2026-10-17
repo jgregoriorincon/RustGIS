@@ -11,6 +11,7 @@ pub mod i18n;
 mod analysispane;
 mod assistantpane;
 mod backstage;
+mod bookmarkpane;
 mod catalogsui;
 mod chrome;
 mod comets;
@@ -249,6 +250,7 @@ pub enum RightPane {
     Shares,
     Sql,
     Directions,
+    Bookmarks,
 }
 
 pub struct UiState {
@@ -345,6 +347,8 @@ pub struct UiState {
     pub geocode: geocodeui::State,
     /// The Directions pane: places, routes and a simulated drive.
     pub nav: navui::State,
+    /// The Bookmarks pane: its filter and the bookmark being edited.
+    pub bookmarks: bookmarkpane::State,
     /// The search box at the foot of the left pane.
     pub search: searchbox::State,
     /// The Data Sources pane's boxes, and the sources' generation last kept in the preferences.
@@ -409,6 +413,7 @@ impl Default for UiState {
             opendata: Default::default(),
             geocode: Default::default(),
             nav: Default::default(),
+            bookmarks: Default::default(),
             search: Default::default(),
             sources: Default::default(),
             sources_saved: 0,
@@ -977,6 +982,7 @@ impl RustGisApp {
             // The Directions pane; with "from"/"to" (and "via", "mode"), opened on that route.
             "ui.pane.directions" if p.get("from").is_some() || p.get("to").is_some() => navui::open_with(self, p),
             "ui.pane.directions" => toggle_right(&mut self.ui, RightPane::Directions),
+            "ui.pane.bookmarks" => toggle_right(&mut self.ui, RightPane::Bookmarks),
             // The SQL pane; with "sql" (and "database"), opened on that query, run with "run".
             "ui.pane.sql" => match p.get("sql").and_then(Value::as_str) {
                 Some(sql) => {
