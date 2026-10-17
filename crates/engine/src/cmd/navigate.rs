@@ -383,12 +383,12 @@ fn bookmark_at(s: &Session, p: &Value) -> Result<(usize, usize), String> {
     Ok((mi, bi.ok_or_else(|| format!("no bookmark '{n}'"))?))
 }
 
-/// `base` (cut to 120 characters), numbered when another of map `mi`'s bookmarks (not `own`)
-/// has it, ignoring case.
+/// `base`, numbered when another of map `mi`'s bookmarks (not `own`) has it, ignoring case; the
+/// number fits in the 120 characters.
 fn unique_bookmark_name(s: &Session, mi: usize, own: Option<usize>, base: &str) -> String {
-    let base: String = base.chars().take(MAX_BOOKMARK_NAME).collect();
     let marks = s.project.maps.get(mi).map(|m| m.bookmarks.as_slice()).unwrap_or_default();
-    super::numbered(&base, |n| marks.iter().enumerate().any(|(j, b)| Some(j) != own && b.name.eq_ignore_ascii_case(n)))
+    let taken = |n: &str| marks.iter().enumerate().any(|(j, b)| Some(j) != own && b.name.eq_ignore_ascii_case(n));
+    super::numbered_within(base, MAX_BOOKMARK_NAME, taken)
 }
 
 /// The longest bookmark name and description kept.

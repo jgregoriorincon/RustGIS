@@ -5856,6 +5856,17 @@ fn bookmarks_are_managed_in_place_on_any_map() {
     assert_eq!(s.run("bookmark.add", &json!({"name": "europe"})).unwrap()["name"], "europe 2");
     assert_eq!(s.run("bookmark.add", &json!({"name": "Europe"})).unwrap()["name"], "Europe 3");
     assert_eq!(names(&s).len(), first.len() + 2);
+    // A long name that is taken keeps its number within the 120 characters.
+    let long = "x".repeat(150);
+    let mut longs = Vec::new();
+    for _ in 0..2 {
+        longs.push(s.run("bookmark.add", &json!({"name": long})).unwrap()["name"].as_str().unwrap().to_string());
+    }
+    assert_eq!(longs.iter().map(|n| n.chars().count()).collect::<Vec<_>>(), [120, 120]);
+    assert!(longs[1].ends_with(" 2") && longs[0] != longs[1], "{longs:?}");
+    for n in &longs {
+        s.run("bookmark.remove", &json!({"name": n})).unwrap();
+    }
     // Rename: unique among the others, its own name in another case is fine, one undo step.
     assert_eq!(s.run("bookmark.rename", &json!({"name": "Europe 3", "newName": "World"})).unwrap()["name"], "World 2");
     assert_eq!(s.run("bookmark.rename", &json!({"name": "World 2", "newName": "WORLD 2"})).unwrap()["name"], "WORLD 2");
