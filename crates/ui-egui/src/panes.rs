@@ -662,7 +662,7 @@ fn selection_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, t: &Tokens) {
     }
     // Lined up with the other views' checkboxes and names.
     let cb = Rect::from_center_size(pos2(r.min.x + 33.0, cy), vec2(14.0, 14.0));
-    let cb_resp = ui.interact(cb, egui::Id::new(("layer_selectable", l.id)), Sense::click());
+    let cb_resp = ui.interact(hit(cb), egui::Id::new(("layer_selectable", l.id)), Sense::click());
     cb_resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, l.selectable, tl!("Selectable")));
     visibility_box(ui, cb, l.selectable, t);
     // Only the map's interactive selection reads it: the tools that name a layer (Select By
@@ -732,10 +732,10 @@ fn service_group_row(
         let ar = Rect::from_center_size(pos2(r.min.x + 16.0, cy), vec2(14.0, 14.0));
         icons::paint(ui.painter(), ar, if group.expanded { "chevron_down" } else { "chevron_right" }, t.text_dim, t.accent);
         // `interact` takes the id as it is (not under the `push_id`): each group's own.
-        let arrow = ui.interact(ar, egui::Id::new(("group_expand", group.id)), Sense::click());
+        let arrow = ui.interact(hit(ar), egui::Id::new(("group_expand", group.id)), Sense::click());
         let visible = !children.is_empty() && children.iter().all(|l| l.visible);
         let cb = Rect::from_center_size(pos2(r.min.x + 33.0, cy), vec2(14.0, 14.0));
-        let cb_resp = ui.interact(cb, egui::Id::new(("group_visible", group.id)), Sense::click());
+        let cb_resp = ui.interact(hit(cb), egui::Id::new(("group_visible", group.id)), Sense::click());
         cb_resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, visible, tl!("Show or hide")));
         visibility_box(ui, cb, visible, t);
         icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 57.0, cy), vec2(18.0, 16.0)), "map", t.icon, t.accent);
@@ -841,8 +841,8 @@ fn visibility_box(ui: &Ui, cb: Rect, visible: bool, t: &Tokens) {
 /// shows or hides it; right-click sets its opacity, moves it up or down (not with `reorder` off:
 /// the list is filtered), or removes it.
 fn tile_row(app: &mut RustGisApp, ui: &mut Ui, i: usize, count: usize, reorder: bool, tile: &TileLayer, t: &Tokens) {
-    let name = if tile.overlay { format!("{} · {}", tile.name, tl!("overlay")) } else { tile.name.clone() };
-    let name = row_name(ui, name, regular(12.5), ui.available_width() - NAME_X - 8.0);
+    let shown = if tile.overlay { format!("{} · {}", tile.name, tl!("overlay")) } else { tile.name.clone() };
+    let name = row_name(ui, shown.clone(), regular(12.5), ui.available_width() - NAME_X - 8.0);
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), name.row_h), Sense::click());
     if resp.hovered() {
         ui.painter().rect_filled(r.shrink2(vec2(4.0, 1.0)), CornerRadius::same(5), t.hover);
@@ -851,7 +851,7 @@ fn tile_row(app: &mut RustGisApp, ui: &mut Ui, i: usize, count: usize, reorder: 
     let cy = r.min.y + 13.0;
     let mut x = r.min.x + 26.0;
     let cb = Rect::from_center_size(pos2(x + 7.0, cy), vec2(14.0, 14.0));
-    let cb_resp = ui.interact(cb, egui::Id::new(("tile_vis", i)), Sense::click()).on_hover_text(tl!("Show or hide"));
+    let cb_resp = ui.interact(hit(cb), egui::Id::new(("tile_vis", i)), Sense::click()).on_hover_text(tl!("Show or hide"));
     visibility_box(ui, cb, tile.visible, t);
     x += 22.0;
     icons::paint(ui.painter(), Rect::from_center_size(pos2(x + 9.0, cy), vec2(18.0, 16.0)), "basemap", t.icon, t.accent);
@@ -863,7 +863,7 @@ fn tile_row(app: &mut RustGisApp, ui: &mut Ui, i: usize, count: usize, reorder: 
     if cb_resp.clicked() {
         action = Some(("map.setTiles", json!({"index": i, "visible": !tile.visible})));
     }
-    let resp = resp.on_hover_text(if elided { format!("{}\n{}", tile.name, tile.url) } else { tile.url.clone() });
+    let resp = resp.on_hover_text(if elided { format!("{shown}\n{}", tile.url) } else { tile.url.clone() });
     resp.context_menu(|ui| {
         ui.horizontal(|ui| {
             ui.label(tl!("Opacity"));
@@ -890,6 +890,12 @@ fn tile_row(app: &mut RustGisApp, ui: &mut Ui, i: usize, count: usize, reorder: 
     if let Some((cmd, p)) = action {
         let _ = app.run(cmd, p);
     }
+}
+
+/// The hit target of a row's 14-point arrow or box at `at`: wider, and the first line's full
+/// height, so a click near it lands.
+fn hit(at: Rect) -> Rect {
+    Rect::from_center_size(at.center(), vec2(at.width() + 4.0, 26.0))
 }
 
 /// Where a layer row's name starts: after the expand arrow, the visibility box and the symbol.
@@ -940,10 +946,10 @@ fn layer_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, scale: f64, reorder: 
         let w = crate::widgets::text_w(ui, &text, regular(10.5)) + 10.0;
         (text, w)
     });
-    let name = if l.definition_query.is_some() { format!("{}  {}", l.name, tl!("(filtered)")) } else { l.name.clone() };
+    let shown = if l.definition_query.is_some() { format!("{}  {}", l.name, tl!("(filtered)")) } else { l.name.clone() };
     let font = if active { semibold(12.5) } else { regular(12.5) };
     let room = ui.available_width() - NAME_X - badge.as_ref().map_or(8.0, |(_, w)| w + 18.0);
-    let name = row_name(ui, name, font, room);
+    let name = row_name(ui, shown.clone(), font, room);
     let sense = if reorder { Sense::click_and_drag() } else { Sense::click() };
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), name.row_h), sense);
     // The icons and the badge line up with the name's first line.
@@ -969,11 +975,11 @@ fn layer_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, scale: f64, reorder: 
     if has_legend {
         icons::paint(ui.painter(), ar, if l.expanded { "chevron_down" } else { "chevron_right" }, t.text_dim, t.accent);
     }
-    let ar_resp = ui.interact(ar, egui::Id::new(("expand", l.id)), Sense::click());
+    let ar_resp = ui.interact(hit(ar), egui::Id::new(("expand", l.id)), Sense::click());
     x += 16.0;
     // Visibility checkbox.
     let cb = Rect::from_center_size(pos2(x + 7.0, cy), vec2(14.0, 14.0));
-    let cb_resp = ui.interact(cb, egui::Id::new(("vis", l.id)), Sense::click());
+    let cb_resp = ui.interact(hit(cb), egui::Id::new(("vis", l.id)), Sense::click());
     visibility_box(ui, cb, l.visible, t);
     x += 22.0;
     // Symbol patch (single symbol) or layer-type icon.
@@ -1072,7 +1078,7 @@ fn layer_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, scale: f64, reorder: 
         },
     };
     // A name cut short shows whole above the details.
-    let tip = if elided { format!("{}\n{tip}", l.name) } else { tip };
+    let tip = if elided { format!("{shown}\n{tip}") } else { tip };
     let resp = resp.on_hover_text(tip);
     resp.context_menu(|ui| layer_menu(app, ui, l, reorder));
     // Legend classes.
