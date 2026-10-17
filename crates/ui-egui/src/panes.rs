@@ -652,8 +652,8 @@ fn selection_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, t: &Tokens) {
     // The name starts at 48 and stops short of the count and its ✕.
     let counted = if count > 0 { 22.0 + 4.0 + crate::widgets::text_w(ui, &count.to_string(), regular(12.0)) + 8.0 } else { 0.0 };
     let color = if l.selectable { t.text } else { t.text_disabled };
-    let (name, line_h, row_h) = row_name(ui, l.name.clone(), regular(12.5), ui.available_width() - 48.0 - 8.0 - counted);
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
+    let name = row_name(ui, l.name.clone(), regular(12.5), ui.available_width() - 48.0 - 8.0 - counted);
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), name.row_h), Sense::click());
     let cy = r.min.y + 13.0;
     if app.session.active_layer == Some(l.id) {
         ui.painter().rect_filled(r.shrink2(vec2(4.0, 1.0)), CornerRadius::same(5), t.selection);
@@ -685,7 +685,7 @@ fn selection_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, t: &Tokens) {
         ui.painter().galley(pos2(cr.min.x - 4.0 - g.size().x, cy - g.size().y / 2.0), g, t.text_dim);
     }
     let elided = name.elided;
-    ui.painter().galley(pos2(r.min.x + 48.0, cy - line_h / 2.0), name, color);
+    name.paint(ui, r, r.min.x + 48.0, color);
     let tip = match (elided, count > 0) {
         (true, true) => Some(format!("{}\n{}", l.name, selected_text(count))),
         (true, false) => Some(l.name.clone()),
@@ -722,8 +722,8 @@ fn service_group_row(
     ui.push_id(("service_group", group.id), |ui| {
         // Laid out as a layer row: the arrow, the box, the icon and the name (two lines at most)
         // in the same places.
-        let (name, line_h, row_h) = row_name(ui, group.name.clone(), semibold(12.5), ui.available_width() - NAME_X - 8.0);
-        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
+        let name = row_name(ui, group.name.clone(), semibold(12.5), ui.available_width() - NAME_X - 8.0);
+        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), name.row_h), Sense::click());
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &group.name));
         if resp.hovered() {
             ui.painter().rect_filled(r.shrink2(vec2(4.0, 1.0)), CornerRadius::same(5), t.hover);
@@ -740,7 +740,7 @@ fn service_group_row(
         visibility_box(ui, cb, visible, t);
         icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 57.0, cy), vec2(18.0, 16.0)), "map", t.icon, t.accent);
         let elided = name.elided;
-        ui.painter().galley(pos2(r.min.x + NAME_X, cy - line_h / 2.0), name, t.text);
+        name.paint(ui, r, r.min.x + NAME_X, t.text);
         if cb_resp.on_hover_text(tl!("Show or hide")).clicked() {
             let _ = app.run("service.group", json!({"group":group.id,"visible":!visible}));
         } else if arrow.clicked() || resp.double_clicked() {
@@ -842,8 +842,8 @@ fn visibility_box(ui: &Ui, cb: Rect, visible: bool, t: &Tokens) {
 /// the list is filtered), or removes it.
 fn tile_row(app: &mut RustGisApp, ui: &mut Ui, i: usize, count: usize, reorder: bool, tile: &TileLayer, t: &Tokens) {
     let name = if tile.overlay { format!("{} · {}", tile.name, tl!("overlay")) } else { tile.name.clone() };
-    let (galley, line_h, row_h) = row_name(ui, name, regular(12.5), ui.available_width() - NAME_X - 8.0);
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
+    let name = row_name(ui, name, regular(12.5), ui.available_width() - NAME_X - 8.0);
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), name.row_h), Sense::click());
     if resp.hovered() {
         ui.painter().rect_filled(r.shrink2(vec2(4.0, 1.0)), CornerRadius::same(5), t.hover);
     }
@@ -857,8 +857,8 @@ fn tile_row(app: &mut RustGisApp, ui: &mut Ui, i: usize, count: usize, reorder: 
     icons::paint(ui.painter(), Rect::from_center_size(pos2(x + 9.0, cy), vec2(18.0, 16.0)), "basemap", t.icon, t.accent);
     x += 24.0;
     let color = if tile.visible && tile.opacity > 0.0 { t.text } else { t.text_disabled };
-    let elided = galley.elided;
-    ui.painter().galley(pos2(x, cy - line_h / 2.0), galley, color);
+    let elided = name.elided;
+    name.paint(ui, r, x, color);
     let mut action: Option<(&str, Value)> = None;
     if cb_resp.clicked() {
         action = Some(("map.setTiles", json!({"index": i, "visible": !tile.visible})));
@@ -895,16 +895,38 @@ fn tile_row(app: &mut RustGisApp, ui: &mut Ui, i: usize, count: usize, reorder: 
 /// Where a layer row's name starts: after the expand arrow, the visibility box and the symbol.
 const NAME_X: f32 = 10.0 + 16.0 + 22.0 + 24.0;
 
-/// A Layers pane row's name laid out in `room` points: on a second line when it doesn't fit, then
-/// cut with "…". Returns it, the height of one of its lines and the row's height (26 points for
-/// one line, a line more for two). The row's icons line up with the first line, 13 points down.
-fn row_name(ui: &Ui, name: String, font: egui::FontId, room: f32) -> (std::sync::Arc<egui::Galley>, f32, f32) {
+/// A Layers pane row's name, laid out by [`row_name`].
+struct RowName {
+    galley: std::sync::Arc<egui::Galley>,
+    /// The height of one of its lines.
+    line_h: f32,
+    /// The row's height: 26 points for one line, a line more for two.
+    row_h: f32,
+    /// The width it was given.
+    room: f32,
+    /// Whether it was cut with "…" (the tooltip then shows it whole).
+    elided: bool,
+}
+
+/// A Layers pane row's name laid out in `room` points: on a second line when it doesn't fit (a
+/// word too long for a line is broken anywhere), then cut with "…".
+fn row_name(ui: &Ui, name: String, font: egui::FontId, room: f32) -> RowName {
     let mut job = egui::text::LayoutJob::simple(name, font, egui::Color32::PLACEHOLDER, room.max(40.0));
     job.wrap.max_rows = 2;
     let galley = ui.painter().layout_job(job);
     let line_h = galley.size().y / galley.rows.len().max(1) as f32;
     let row_h = (galley.size().y + 26.0 - line_h).max(26.0);
-    (galley, line_h, row_h)
+    let elided = galley.elided;
+    RowName { galley, line_h, row_h, room, elided }
+}
+
+impl RowName {
+    /// Paints the name from `x` in row `r`, its first line on the icons' line (13 points down),
+    /// clipped to its room: never under the row's badge, count or the pane's edge.
+    fn paint(self, ui: &Ui, r: Rect, x: f32, color: egui::Color32) {
+        let clip = Rect::from_min_max(pos2(x, r.min.y), pos2(x + self.room.max(0.0), r.max.y));
+        ui.painter().with_clip_rect(clip).galley(pos2(x, r.min.y + 13.0 - self.line_h / 2.0), self.galley, color);
+    }
 }
 
 /// A layer's row and, expanded, its legend; returns the rectangle of both. With `reorder` off
@@ -921,9 +943,9 @@ fn layer_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, scale: f64, reorder: 
     let name = if l.definition_query.is_some() { format!("{}  {}", l.name, tl!("(filtered)")) } else { l.name.clone() };
     let font = if active { semibold(12.5) } else { regular(12.5) };
     let room = ui.available_width() - NAME_X - badge.as_ref().map_or(8.0, |(_, w)| w + 18.0);
-    let (galley, line_h, row_h) = row_name(ui, name, font, room);
+    let name = row_name(ui, name, font, room);
     let sense = if reorder { Sense::click_and_drag() } else { Sense::click() };
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), sense);
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), name.row_h), sense);
     // The icons and the badge line up with the name's first line.
     let cy = r.min.y + 13.0;
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &l.name));
@@ -978,8 +1000,8 @@ fn layer_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, scale: f64, reorder: 
     } else {
         t.text
     };
-    let elided = galley.elided;
-    ui.painter().galley(pos2(x, cy - line_h / 2.0), galley, color);
+    let elided = name.elided;
+    name.paint(ui, r, x, color);
     if let Some((badge, bw)) = badge {
         let br = Rect::from_center_size(pos2(r.max.x - 12.0 - bw / 2.0, cy), vec2(bw, 16.0));
         ui.painter().rect_filled(br, CornerRadius::same(8), egui::Color32::from_rgb(0x00, 0xA8, 0xC0));
