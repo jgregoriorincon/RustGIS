@@ -81,7 +81,9 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
     // A snapshot: the rows run commands that change the list under them.
     let q = app.ui.bookmarks.filter.trim().to_lowercase();
     let active = app.session.project.active_map;
-    let maps: Vec<(String, bool, Vec<Mark>)> = app
+    // Each map with bookmarks: its name, whether it is in view, how many it has (for Move Down)
+    // and those the filter keeps.
+    let maps: Vec<(String, bool, usize, Vec<Mark>)> = app
         .session
         .project
         .maps
@@ -95,9 +97,9 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                 .filter(|(_, b)| q.is_empty() || b.name.to_lowercase().contains(&q) || b.description.to_lowercase().contains(&q))
                 .map(|(index, b)| Mark { index, name: b.name.clone(), description: b.description.clone() })
                 .collect();
-            (m.name.clone(), i == active, marks)
+            (m.name.clone(), i == active, m.bookmarks.len(), marks)
         })
-        .filter(|(_, _, marks)| !marks.is_empty())
+        .filter(|(_, _, _, marks)| !marks.is_empty())
         .collect();
     if maps.is_empty() {
         let hint = if q.is_empty() {
@@ -108,8 +110,7 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         ui.label(RichText::new(hint).weak());
         return;
     }
-    for (map, in_view, marks) in maps {
-        let count = app.session.project.maps.iter().find(|m| m.name == map).map_or(0, |m| m.bookmarks.len());
+    for (map, in_view, count, marks) in maps {
         let mut title = RichText::new(&map).font(semibold(12.5));
         if in_view {
             title = title.color(t.accent);
