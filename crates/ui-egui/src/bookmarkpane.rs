@@ -52,6 +52,10 @@ struct Mark {
     description: String,
 }
 
+/// The keys an edit box keeps: the arrows move its cursor (as a plain TextEdit's do), and Escape
+/// reaches it rather than the global shortcuts.
+const KEYS: egui::EventFilter = egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, escape: true, tab: false };
+
 fn run(app: &mut RustGisApp, id: &str, p: Value) {
     if let Err(e) = app.run(id, p) {
         app.session.notify(e, true);
@@ -82,6 +86,18 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         }
     });
     ui.add_space(4.0);
+    // An edit or a description open on a bookmark that is gone (deleted, renamed, undone) ends.
+    {
+        let maps = &app.session.project.maps;
+        let has = |map: &str, name: &str| maps.iter().any(|m| m.name == map && m.bookmarks.iter().any(|b| b.name == name));
+        let st = &mut app.ui.bookmarks;
+        if st.editing.as_ref().is_some_and(|e| !has(&e.map, &e.name)) {
+            st.editing = None;
+        }
+        if st.open.as_ref().is_some_and(|(m, n)| !has(m, n)) {
+            st.open = None;
+        }
+    }
     // A snapshot: the rows run commands that change the list under them.
     let q = app.ui.bookmarks.filter.trim().to_lowercase();
     let active = app.session.project.active_map;
@@ -235,8 +251,7 @@ fn start(app: &mut RustGisApp, map: &str, m: &Mark, field: Field) {
 /// The box a bookmark is renamed in: Enter (or clicking away) renames it, Escape leaves it as it was.
 fn name_box(app: &mut RustGisApp, ui: &mut Ui, p: &Value) {
     let Some(mut e) = app.ui.bookmarks.editing.take() else { return };
-    let keys = egui::EventFilter { escape: true, ..Default::default() };
-    let r = ui.add(egui::TextEdit::singleline(&mut e.text).desired_width(ui.available_width()).event_filter(keys));
+    let r = ui.add(egui::TextEdit::singleline(&mut e.text).desired_width(ui.available_width()).event_filter(KEYS));
     if !e.focused {
         r.request_focus();
         e.focused = true;
@@ -272,11 +287,13 @@ fn description(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens, map: &str, m: &Mar
         return;
     }
     let Some(mut e) = app.ui.bookmarks.editing.take() else { return };
-    let r = ui.add(egui::TextEdit::multiline(&mut e.text).desired_rows(3).desired_width(ui.available_width()));
+    let r = ui.add(egui::TextEdit::multiline(&mut e.text).desired_rows(3).desired_width(ui.available_width()).event_filter(KEYS));
     if !e.focused {
         r.request_focus();
         e.focused = true;
     }
+    // Escape cancels; clicking away keeps the box (Save and Cancel take the focus from it too).
+    let escape = r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
     let (mut save, mut cancel) = (false, false);
     ui.horizontal(|ui| {
         save = ui.small_button(tl!("Save")).clicked();
@@ -286,7 +303,7 @@ fn description(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens, map: &str, m: &Mar
         let mut q = p.clone();
         q["description"] = json!(e.text);
         run(app, "bookmark.describe", q);
-    } else if !cancel {
+    } else if !cancel && !escape {
         app.ui.bookmarks.editing = Some(e);
     }
 }
