@@ -7,7 +7,11 @@ use egui::{RichText, Sense, Ui, vec2};
 use serde_json::{Value, json};
 
 use crate::theme::{Tokens, semibold};
-use crate::{RustGisApp, icons, widgets};
+use crate::{RustGisApp, i18n, icons, widgets};
+
+/// The most bookmarks the pane lists at once: a map can import thousands, and every row is laid
+/// out each frame; the filter narrows the rest.
+const MAX_ROWS: usize = 500;
 
 /// The Bookmarks pane's state.
 #[derive(Default)]
@@ -82,7 +86,8 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
     let q = app.ui.bookmarks.filter.trim().to_lowercase();
     let active = app.session.project.active_map;
     // Each map with bookmarks: its name, whether it is in view, how many it has (for Move Down)
-    // and those the filter keeps.
+    // and those the filter keeps, up to MAX_ROWS in all (`hidden` counts the rest).
+    let (mut room, mut hidden) = (MAX_ROWS, 0usize);
     let maps: Vec<(String, bool, usize, Vec<Mark>)> = app
         .session
         .project
@@ -90,13 +95,18 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         .iter()
         .enumerate()
         .map(|(i, m)| {
-            let marks: Vec<Mark> = m
-                .bookmarks
-                .iter()
-                .enumerate()
-                .filter(|(_, b)| q.is_empty() || b.name.to_lowercase().contains(&q) || b.description.to_lowercase().contains(&q))
-                .map(|(index, b)| Mark { index, name: b.name.clone(), description: b.description.clone() })
-                .collect();
+            let mut marks = Vec::new();
+            for (index, b) in m.bookmarks.iter().enumerate() {
+                if !(q.is_empty() || b.name.to_lowercase().contains(&q) || b.description.to_lowercase().contains(&q)) {
+                    continue;
+                }
+                if room == 0 {
+                    hidden += 1;
+                    continue;
+                }
+                room -= 1;
+                marks.push(Mark { index, name: b.name.clone(), description: b.description.clone() });
+            }
             (m.name.clone(), i == active, m.bookmarks.len(), marks)
         })
         .filter(|(_, _, _, marks)| !marks.is_empty())
@@ -120,6 +130,11 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
                 row(app, ui, t, &map, in_view, count, m);
             }
         });
+    }
+    if hidden > 0 {
+        ui.add_space(4.0);
+        let more = i18n::fmt("{n} more bookmarks aren't listed. Type in the filter to narrow the list.", &[("n", &hidden.to_string())]);
+        ui.label(RichText::new(more).small().weak());
     }
 }
 
