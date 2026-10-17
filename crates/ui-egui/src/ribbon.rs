@@ -1997,7 +1997,7 @@ fn edit_tab(app: &mut RustGisApp, ui: &mut Ui) {
                 menu_item(ui, app, "settings", "Topology Options…", "ui.pane.editing", Value::Null);
                 if ui.button(tl!("Error Inspector (validate)")).clicked() {
                     let _ = app.run("topology.validate", Value::Null);
-                    app.ui.right = Some(RightPane::Editing);
+                    app.ui.open_right(RightPane::Editing);
                     ui.close();
                 }
             });
@@ -3531,7 +3531,7 @@ fn raster_style_groups(app: &mut RustGisApp, ui: &mut Ui) {
             }
             ui.separator();
             if ui.button(tl!("Symbology Pane…")).clicked() {
-                app.ui.right = Some(RightPane::Symbology);
+                app.ui.open_right(RightPane::Symbology);
                 ui.close();
             }
         });
