@@ -268,13 +268,18 @@ pub fn paint(painter: &Painter, r: Rect, name: &str, ink: Color32, accent: Color
             p.line(&[(12.0 + 1.0 * d, 8.5), (12.0 + 4.5 * d, 12.0), (12.0 + 1.0 * d, 15.5)], 1.8, ink);
         }
         "bookmark" => p.bookmark(6.0, 3.0, 12.0, 18.0),
-        // Export, Import and Update Bookmark (#351): the bookmark with a green badge on its
-        // corner, as New wears its plus: an arrow out of it, an arrow into it, or one turning.
-        "bookmark_export" | "bookmark_import" | "bookmark_update" => {
+        // New, Export, Import and Update Bookmark (#351): the bookmark with a green badge on its
+        // corner, as New wears its plus: a plus, an arrow out of it, an arrow into it, or one
+        // turning.
+        "bookmark_new" | "bookmark_export" | "bookmark_import" | "bookmark_update" => {
             p.bookmark(5.0, 2.0, 12.0, 18.0);
             let (cx, cy, white) = (18.0, 18.0, Color32::WHITE);
             p.circle(cx, cy, 5.0, Some(green), None);
-            if name == "bookmark_update" {
+            if name == "bookmark_new" {
+                // As wide as the arrows' heads, as heavy as their shafts.
+                p.line(&[(cx - 2.8, cy), (cx + 2.8, cy)], 1.9, white);
+                p.line(&[(cx, cy - 2.8), (cx, cy + 2.8)], 1.9, white);
+            } else if name == "bookmark_update" {
                 let r = 2.9;
                 p.arc(cx, cy, r, -150.0, 120.0, 1.6, white);
                 // The head at the arc's end, pointing on round the circle.
@@ -1056,6 +1061,7 @@ pub const ALL: &[&str] = &[
     "prev_extent",
     "next_extent",
     "bookmark",
+    "bookmark_new",
     "bookmark_export",
     "bookmark_import",
     "bookmark_update",

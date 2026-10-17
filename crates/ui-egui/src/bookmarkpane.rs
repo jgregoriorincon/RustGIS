@@ -75,7 +75,7 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
         let gap = ui.spacing().item_spacing.x;
         let room = (ui.available_width() - 3.0 * (26.0 + gap)).max(60.0);
         ui.allocate_ui(vec2(room, 26.0), |ui| widgets::search_field(ui, &mut app.ui.bookmarks.filter, tl!("Filter bookmarks")));
-        if act(ui, "new", tl!("New Bookmark…")).clicked() {
+        if act(ui, "bookmark_new", tl!("New Bookmark…")).clicked() {
             run(app, "ui.dialog", json!({"name": "bookmark"}));
         }
         if act(ui, "bookmark_import", tl!("Import Bookmarks…")).clicked() {
