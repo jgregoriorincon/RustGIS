@@ -5915,7 +5915,21 @@ fn bookmarks_are_managed_in_place_on_any_map() {
     assert!(text.contains("added from Second"), "{text}");
     s.run("bookmark.remove", &json!({"name": "Here"})).unwrap();
     s.run("bookmark.import", &json!({"text": text})).unwrap();
-    assert_eq!(s.map().bookmarks.iter().find(|b| b.name == "Here").map(|b| b.description.as_str()), Some("added from Second"));
+    let described = |s: &Session| s.map().bookmarks.iter().find(|b| b.name == "Here").map(|b| b.description.clone());
+    assert_eq!(described(&s).as_deref(), Some("added from Second"));
+    // A file without descriptions (older, or written by hand) leaves the one a bookmark has; an
+    // empty one clears it.
+    let mut old: Value = serde_json::from_str(&text).unwrap();
+    for b in old["bookmarks"].as_array_mut().unwrap() {
+        b.as_object_mut().unwrap().remove("description");
+    }
+    s.run("bookmark.import", &json!({"text": old.to_string()})).unwrap();
+    assert_eq!(described(&s).as_deref(), Some("added from Second"));
+    for b in old["bookmarks"].as_array_mut().unwrap() {
+        b["description"] = json!("");
+    }
+    s.run("bookmark.import", &json!({"text": old.to_string()})).unwrap();
+    assert_eq!(described(&s).as_deref(), Some(""));
 }
 
 #[test]

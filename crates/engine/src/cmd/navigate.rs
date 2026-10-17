@@ -443,15 +443,19 @@ fn import_bookmarks(s: &mut Session, p: &Value) -> CmdResult {
             continue;
         }
         let Some(camera) = place_at(m, Coord::new(lon, lat), ground) else { continue };
-        let description: String = super::ps(b, "description").unwrap_or_default().trim().chars().take(MAX_DESCRIPTION).collect();
+        // Absent (a file from before descriptions, or written by hand) isn't empty: a bookmark
+        // it replaces keeps its own.
+        let description: Option<String> = super::ps(b, "description").map(|d| d.trim().chars().take(MAX_DESCRIPTION).collect());
         // A bookmark by the same name is replaced where it is in the list (importing a file
         // again updates its bookmarks).
         match m.bookmarks.iter_mut().find(|b| b.name.eq_ignore_ascii_case(&name)) {
             Some(b) => {
                 b.camera = camera;
-                b.description = description;
+                if let Some(d) = description {
+                    b.description = d;
+                }
             }
-            None => m.bookmarks.push(Bookmark { description, ..Bookmark::new(name.clone(), camera) }),
+            None => m.bookmarks.push(Bookmark { description: description.unwrap_or_default(), ..Bookmark::new(name.clone(), camera) }),
         }
         if !names.iter().any(|n: &String| n.eq_ignore_ascii_case(&name)) {
             names.push(name);
