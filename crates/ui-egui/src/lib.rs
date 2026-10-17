@@ -1191,17 +1191,20 @@ impl RustGisApp {
     }
 
     fn run_ui(&mut self, id: &str, p: &Value) -> Result<Value, String> {
-        // A right pane's command toggles it; `{"close": true}` closes it, in view or not (its tab's ✕).
-        let close = p.get("close").and_then(Value::as_bool) == Some(true);
-        let toggle_right = |ui: &mut UiState, pane: RightPane| if close { ui.close_right(pane) } else { ui.toggle_right(pane) };
+        // A pane's command toggles it; `{"close": true}` closes it, in view or not (a tab's ✕),
+        // whatever else the command is given (SQL to run, a question to ask).
+        if p.get("close").and_then(Value::as_bool) == Some(true) && panes::close_pane_of(self, id) {
+            return Ok(Value::Null);
+        }
+        let toggle_right = |ui: &mut UiState, pane: RightPane| ui.toggle_right(pane);
         match id {
             "ui.pane.contents" => self.ui.left = if self.ui.left == Some(LeftPane::Contents) { None } else { Some(LeftPane::Contents) },
             "ui.pane.catalog" => self.ui.left = if self.ui.left == Some(LeftPane::Catalog) { None } else { Some(LeftPane::Catalog) },
             "ui.pane.sources" => self.ui.left = if self.ui.left == Some(LeftPane::Sources) { None } else { Some(LeftPane::Sources) },
             "ui.pane.geoprocessing" => toggle_right(&mut self.ui, RightPane::Geoprocessing),
             "ui.pane.symbology" => {
-                // Closing it, or showing its tab already open, needs no layer.
-                if self.session.active_layer.is_none() && !close && !self.ui.right_open.contains(&RightPane::Symbology) {
+                // Showing its tab already open needs no layer.
+                if self.session.active_layer.is_none() && !self.ui.right_open.contains(&RightPane::Symbology) {
                     return Err("select a layer in the Layers pane first".into());
                 }
                 toggle_right(&mut self.ui, RightPane::Symbology)

@@ -59,6 +59,49 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui) {
     finish_class_color_drag(app, ui);
 }
 
+/// Every right pane. A new pane goes here and in [`right_title`].
+const RIGHT_PANES: [RightPane; 21] = [
+    RightPane::Geoprocessing,
+    RightPane::Symbology,
+    RightPane::History,
+    RightPane::Details,
+    RightPane::Editing,
+    RightPane::Design,
+    RightPane::Workflows,
+    RightPane::Script,
+    RightPane::Tasks,
+    RightPane::Jobs,
+    RightPane::Profile,
+    RightPane::Diagnostics,
+    RightPane::Infographics,
+    RightPane::Report,
+    RightPane::Presentation,
+    RightPane::Notebook,
+    RightPane::Assistant,
+    RightPane::Shares,
+    RightPane::Sql,
+    RightPane::Directions,
+    RightPane::Bookmarks,
+];
+
+/// Closes the pane that command `id` (a `ui.pane.*`) opens, on its side; false when `id` opens
+/// none. `{"close": true}` means this for every pane command, whatever else it is given.
+pub(crate) fn close_pane_of(app: &mut RustGisApp, id: &str) -> bool {
+    if let Some(pane) = RIGHT_PANES.into_iter().find(|p| right_title(*p).1 == id) {
+        app.ui.close_right(pane);
+        return true;
+    }
+    match LEFT_PANES.iter().find(|p| p.3 == id) {
+        Some((pane, ..)) => {
+            if app.ui.left == Some(*pane) {
+                app.ui.left = None;
+            }
+            true
+        }
+        None => false,
+    }
+}
+
 /// A right pane's title (its tab) and the command that opens, shows or closes it.
 fn right_title(pane: RightPane) -> (&'static str, &'static str) {
     match pane {

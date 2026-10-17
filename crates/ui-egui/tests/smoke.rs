@@ -1423,4 +1423,16 @@ fn right_panes_open_as_tabs() {
     h.get_by_label("Close all panes").click();
     h.step();
     assert_eq!(tabs(&h), (None, vec![]));
+    // `close` means close for every pane command, whatever else it is given; on the left too.
+    h.state_mut().run("ui.pane.sql", json!({"sql": "SELECT 1"})).unwrap();
+    h.state_mut().run("ui.pane.sql", json!({"sql": "SELECT 2", "close": true})).unwrap();
+    assert_eq!(tabs(&h), (None, vec![]));
+    h.state_mut().run("ui.pane.assistant", json!({"ask": "hello", "close": true})).unwrap();
+    assert_eq!(tabs(&h), (None, vec![]), "closing a pane that isn't open opens nothing");
+    for _ in 0..2 {
+        h.state_mut().run("ui.pane.contents", json!({"close": true})).unwrap();
+        h.state_mut().run("ui.pane.catalog", json!({"close": true})).unwrap();
+        h.state_mut().run("ui.pane.sources", json!({"close": true})).unwrap();
+        assert_eq!(h.state().ui.left, None, "a left pane's close never opens one");
+    }
 }
