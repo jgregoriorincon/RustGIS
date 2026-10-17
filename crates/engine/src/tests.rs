@@ -5900,12 +5900,12 @@ fn bookmarks_are_managed_in_place_on_any_map() {
     assert!((s.scale() / scale - 1.0).abs() < 1e-6, "Pan To keeps the scale");
     s.run("bookmark.go", &json!({"name": "Europe"})).unwrap();
     assert!((s.scale() / scale - 1.0).abs() > 0.01, "Go To takes the bookmark's scale");
-    // Another map's bookmark is reached by `map`, and going to it brings that map into view.
+    // Another map's bookmark is reached by `map`.
     let world_map = s.map().name.clone();
     s.run("map.new", &json!({"name": "Second"})).unwrap();
     assert!(s.run("bookmark.go", &json!({"name": "Europe"})).is_err(), "not on this map");
     s.run("bookmark.add", &json!({"name": "Here", "map": world_map, "description": "added from Second"})).unwrap();
-    // Another map's bookmark moves the map in view to its place (as ArcGIS Pro does): Second
+    // Going to another map's bookmark moves the map in view to its place (as desktop GIS do): Second
     // stays in view, at the place and scale World shows for it.
     s.run("bookmark.go", &json!({"name": "Here", "map": world_map})).unwrap();
     assert_eq!(s.map().name, "Second");

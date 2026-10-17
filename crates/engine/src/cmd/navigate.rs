@@ -334,7 +334,7 @@ fn go_bookmark(s: &mut Session, p: &Value) -> CmdResult {
     let (mi, bi) = bookmark_at(s, p)?;
     let from = s.project.maps.get(mi).ok_or("no map")?;
     let mark = from.bookmarks.get(bi).map(|b| b.camera).ok_or("no bookmark")?;
-    // Another map's bookmark moves the map in view to the same place, as in ArcGIS Pro: through
+    // Another map's bookmark moves the map in view to the same place, as desktop GIS do: through
     // longitude/latitude, so it works across projections.
     let to = if mi == s.project.active_map {
         mark
