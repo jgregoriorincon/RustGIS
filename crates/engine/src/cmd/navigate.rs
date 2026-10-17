@@ -91,7 +91,7 @@ pub fn commands() -> Vec<C> {
         ),
         C::new("bookmark.go", "Go To Bookmark", "Home › Navigate › Bookmarks", go_bookmark)
             .view()
-            .params(r#"{"name": string, "map"?: name (brought into view), "pan"?: bool (keep the current scale)}"#),
+            .params(r#"{"name": string, "map"?: name (the bookmark's map), "pan"?: bool (keep the current scale)}"#),
         C::new("bookmark.remove", "Remove Bookmark", "Home › Navigate › Bookmarks", |s, p| {
             let (mi, bi) = bookmark_at(s, p)?;
             if let Some(m) = s.project.maps.get_mut(mi) {
