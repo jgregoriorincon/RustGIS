@@ -3621,18 +3621,8 @@ fn render_frame(map: &mut Map, view: &View, full_res_rasters: bool, backend: Bac
             (sy as f32 > sky_y).then_some((sx as f32, sy as f32))
         };
         let fixed = fixed_labels.into_iter().map(|l| Candidate::from((l, f64::MAX, (u32::MAX, usize::MAX, 0, 0))));
-        for mut c in fixed.chain(label_candidates) {
-            let l = &mut c.label;
-            turn_with(l, &at);
-            let Some((x, y)) = at(l.x, l.y) else { continue };
-            (l.x, l.y) = (x, y);
-            if let Some(i) = &mut l.icon {
-                let Some((ix, iy)) = at(i.x, i.y) else { continue };
-                (i.x, i.y) = (ix, iy);
-            }
-            // (An alternative out of sight is one fewer to try.)
-            c.alternatives = c.alternatives.into_iter().filter_map(|(x, y)| at(x, y)).collect();
-            out.push(c);
+        for c in fixed.chain(label_candidates) {
+            out.extend(tilt_candidate(c, &at));
         }
         label_candidates = Vec::new();
         fixed_labels = Vec::new();
@@ -3663,6 +3653,8 @@ fn render_frame(map: &mut Map, view: &View, full_res_rasters: bool, backend: Bac
         None => (view.width, view.height),
     };
     let placed = place_labels(label_candidates, fixed_labels, lw as f32, lh as f32, lock.is_some());
+    // (Never from a tilted view's: its labels' places out of sight are dropped, so the numbers of
+    // the places they take aren't those of their class's.)
     if display.locked && map.label_lock.is_none() && !matches!(labels_to, Labels::Tilted(..)) {
         map.label_lock = Some(placed.keys);
     }
@@ -4204,6 +4196,22 @@ fn longest_on_screen(ctx: &Ctx<'_>, parts: &[Vec<Coord>]) -> Option<Vec<(f32, f3
 /// Turns a label turned with the map (and its icon) as `at` moves it into another view (a
 /// turned or tilted one): its angle there is that of a short step along it, the text kept
 /// upright. Called before the label itself is moved.
+/// A label in a tilted view, at its place there (`at`: a place's in the view, if in sight). Its
+/// own place, or else the first of its alternatives in sight, is where it goes; the rest in sight
+/// are left to try. Left out with none in sight, or its icon out of sight.
+fn tilt_candidate(mut c: Candidate, at: &impl Fn(f32, f32) -> Option<(f32, f32)>) -> Option<Candidate> {
+    let l = &mut c.label;
+    turn_with(l, at);
+    let alternatives = std::mem::take(&mut c.alternatives);
+    let mut spots = std::iter::once((l.x, l.y)).chain(alternatives).filter_map(|(x, y)| at(x, y));
+    (l.x, l.y) = spots.next()?;
+    if let Some(i) = &mut l.icon {
+        (i.x, i.y) = at(i.x, i.y)?;
+    }
+    c.alternatives = spots.collect();
+    Some(c)
+}
+
 fn turn_with(l: &mut PlacedLabel, at: &impl Fn(f32, f32) -> Option<(f32, f32)>) {
     let turned = |x: f32, y: f32, a: f32| -> Option<f32> {
         let ((x0, y0), (x1, y1)) = (at(x, y)?, at(x + 4.0 * a.cos(), y + 4.0 * a.sin())?);
@@ -4755,6 +4763,29 @@ mod tests {
         // Locked, its own place is kept whatever is under it.
         let p = place_labels(vec![blocker(), taken(vec![(300.0, 20.0)])], Vec::new(), 400.0, 200.0, true);
         assert_eq!(at(&p)[1], ("Taken".to_string(), 100.0, 20.0));
+    }
+
+    /// In a tilted view a label whose own place is out of sight (in the sky, say) goes to the
+    /// first of its alternatives in sight, and keeps the others in sight to try.
+    #[test]
+    fn tilted_labels_fall_back_on_an_alternative_in_sight() {
+        // In sight below y = 100 only, and moved 1000 right there.
+        let at = |x: f32, y: f32| (y > 100.0).then_some((x + 1000.0, y));
+        let offer = |(x, y): (f32, f32), alternatives| Candidate {
+            label: PlacedLabel { x, y, ..label("Paris", 0.0, None, 0.0) },
+            priority: 1.0,
+            key: (1, 0, 0, 0),
+            alternatives,
+        };
+        let c = tilt_candidate(offer((10.0, 50.0), vec![(10.0, 60.0), (10.0, 150.0), (20.0, 160.0)]), &at).unwrap();
+        assert_eq!((c.label.x, c.label.y), (1010.0, 150.0));
+        assert_eq!(c.alternatives, [(1020.0, 160.0)]);
+        // Its own place in sight stays its own.
+        let c = tilt_candidate(offer((10.0, 120.0), vec![(10.0, 50.0), (10.0, 150.0)]), &at).unwrap();
+        assert_eq!((c.label.x, c.label.y), (1010.0, 120.0));
+        assert_eq!(c.alternatives, [(1010.0, 150.0)]);
+        // None in sight: left out.
+        assert!(tilt_candidate(offer((10.0, 50.0), vec![(10.0, 60.0)]), &at).is_none());
     }
 
     /// In a tilted view, a candidate the bands repeat (the same layer, row and class) is placed
