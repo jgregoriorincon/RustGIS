@@ -964,10 +964,11 @@ pub struct Map {
     /// Map-wide label display switches.
     #[serde(default)]
     pub label_display: LabelDisplay,
-    /// The labels placed when labels were locked: only they are drawn while the lock holds,
-    /// wherever the map moves. Filled by the renderer.
+    /// The labels placed when labels were locked, each with the place it took (0 its own, else
+    /// one of its alternatives, #1011): only they are drawn while the lock holds, there, wherever
+    /// the map moves. Filled by the renderer.
     #[serde(skip)]
-    pub label_lock: Option<Vec<LabelKey>>,
+    pub label_lock: Option<Vec<(LabelKey, u8)>>,
     /// Relationships, snapping, topology rules and edit settings.
     #[serde(default)]
     pub editing: design::MapEditing,
