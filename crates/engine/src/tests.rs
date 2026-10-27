@@ -2419,6 +2419,13 @@ fn a_change_to_where_point_labels_go_locks_them_again() {
     assert!(s.map().label_lock.is_none(), "another position: locked again");
     draw(&mut s);
     assert!(s.map().label_lock.is_some(), "locked on the next frame");
+    // A style applied counts its classes' places too.
+    s.run("style.new", &json!({"layer": "Cities", "name": "Above"})).unwrap();
+    s.run("labels.placement", &json!({"layer": "Cities", "position": "below"})).unwrap();
+    draw(&mut s);
+    assert!(s.map().label_lock.is_some());
+    s.run("style.apply", &json!({"layer": "Cities", "name": "Above"})).unwrap();
+    assert!(s.map().label_lock.is_none(), "a style putting the labels elsewhere: locked again");
 }
 
 /// A lock names each label by its class's place in the list: a change to the list (a class added,

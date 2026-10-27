@@ -267,7 +267,7 @@ pub(crate) fn with_labels(s: &mut Session, p: &Value, f: impl FnOnce(&mut Labeli
     let l = s.map_mut().layer_mut(id).ok_or("no such layer")?;
     let mut labels = l.labels.clone();
     f(&mut labels)?;
-    let relock = !same_class_list(&l.labels, &labels) || !same_places(&l.labels, &labels);
+    let relock = !lock_holds(&l.labels, &labels);
     l.labels = labels;
     if relock {
         s.map_mut().label_lock = None;
@@ -280,6 +280,12 @@ pub(crate) fn with_labels(s: &mut Session, p: &Value, f: impl FnOnce(&mut Labeli
 /// where they are placed next (`Map::label_lock` emptied, #732).
 pub(crate) fn same_class_list(a: &Labeling, b: &Labeling) -> bool {
     a.classes.iter().map(|c| &c.name).eq(b.classes.iter().map(|c| &c.name))
+}
+
+/// Whether a lock taken with the labels `a` still names those of `b`: the same classes, listed
+/// alike and putting their point labels in the same places.
+pub(crate) fn lock_holds(a: &Labeling, b: &Labeling) -> bool {
+    same_class_list(a, b) && same_places(a, b)
 }
 
 /// Whether the classes of `a` and `b` (listed alike) put their point labels in the same places.
