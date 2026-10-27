@@ -446,7 +446,9 @@ fn convert(s: &mut Session, p: &Value) -> CmdResult {
     labels.classes.truncate(MAX_LABEL_CLASSES);
     for c in std::iter::once(&mut labels.default).chain(labels.classes.iter_mut()) {
         c.field = "TEXT".into();
+        // On its point, never round it: an annotation stays where it is (#1011).
         c.placement = LabelPlacement::Center;
+        c.other_positions = false;
         // Each class picks the points it labelled, Default too once there are others (#732):
         // with no clause it would label theirs as well.
         c.where_ = classes.then(|| format!("\"CLASS\" = '{}'", c.name.replace('\'', "''")));

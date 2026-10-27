@@ -2190,11 +2190,15 @@ fn label_range_placement_lock_and_convert() {
     s.run("labels.lock", &json!({"on": false})).unwrap();
     count(&mut s);
     assert!(s.map().label_lock.is_none());
-    // Convert makes an annotation layer and turns the source's labels off.
+    // Convert makes an annotation layer and turns the source's labels off; its labels stay on
+    // their points, even when the source's went round them (#1011).
+    let countries = s.map().layer_by_name("Countries").unwrap().id;
+    s.map_mut().layer_mut(countries).unwrap().labels.default.other_positions = true;
     let r = s.run("labels.convert", &json!({"layer": "Countries"})).unwrap();
     assert!(r["annotations"].as_u64().unwrap() > 100);
     let a = s.map().layer_by_name("Countries Annotation").unwrap();
     assert!(a.labels.enabled && a.labels.default.field == "TEXT");
+    assert!(!a.labels.default.other_positions);
     assert!(!s.map().layer_by_name("Countries").unwrap().labels.enabled);
 }
 
