@@ -3491,17 +3491,16 @@ fn render_frame(map: &mut Map, view: &View, full_res_rasters: bool, backend: Bac
                             }
                             // A point's label may go round it when its own place is taken (#1011);
                             // locked, it goes where it went then, and nowhere else.
-                            let mut alternatives: Vec<(f32, f32)> = if class.other_positions && is_point {
-                                class.placement.alternatives().map(place).collect()
-                            } else {
-                                Vec::new()
-                            };
-                            if let Some(&won) = lock.as_ref().and_then(|k| k.get(&key)) {
-                                if let Some(&at) = usize::from(won).checked_sub(1).and_then(|i| alternatives.get(i)) {
-                                    (lx, ly) = at;
+                            let others = || class.placement.alternatives().filter(|_| class.other_positions && is_point).map(place);
+                            let alternatives: Vec<(f32, f32)> = match lock.as_ref().and_then(|k| k.get(&key)) {
+                                Some(&won) => {
+                                    if let Some(at) = usize::from(won).checked_sub(1).and_then(|i| others().nth(i)) {
+                                        (lx, ly) = at;
+                                    }
+                                    Vec::new()
                                 }
-                                alternatives.clear();
-                            }
+                                None => others().collect(),
+                            };
                             // (The text copied for each repeat but the last, which takes it.)
                             let text = if n == last { std::mem::take(&mut text) } else { text.clone() };
                             label_candidates.push(Candidate {
@@ -4193,9 +4192,6 @@ fn longest_on_screen(ctx: &Ctx<'_>, parts: &[Vec<Coord>]) -> Option<Vec<(f32, f3
         .max_by(|a, b| length(a).total_cmp(&length(b)))
 }
 
-/// Turns a label turned with the map (and its icon) as `at` moves it into another view (a
-/// turned or tilted one): its angle there is that of a short step along it, the text kept
-/// upright. Called before the label itself is moved.
 /// A label in a tilted view, at its place there (`at`: a place's in the view, if in sight). Its
 /// own place, or else the first of its alternatives in sight, is where it goes; the rest in sight
 /// are left to try. Left out with none in sight, or its icon out of sight.
@@ -4212,6 +4208,9 @@ fn tilt_candidate(mut c: Candidate, at: &impl Fn(f32, f32) -> Option<(f32, f32)>
     Some(c)
 }
 
+/// Turns a label turned with the map (and its icon) as `at` moves it into another view (a
+/// turned or tilted one): its angle there is that of a short step along it, the text kept
+/// upright. Called before the label itself is moved.
 fn turn_with(l: &mut PlacedLabel, at: &impl Fn(f32, f32) -> Option<(f32, f32)>) {
     let turned = |x: f32, y: f32, a: f32| -> Option<f32> {
         let ((x0, y0), (x1, y1)) = (at(x, y)?, at(x + 4.0 * a.cos(), y + 4.0 * a.sin())?);

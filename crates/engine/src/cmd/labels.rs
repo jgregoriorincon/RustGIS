@@ -267,7 +267,7 @@ pub(crate) fn with_labels(s: &mut Session, p: &Value, f: impl FnOnce(&mut Labeli
     let l = s.map_mut().layer_mut(id).ok_or("no such layer")?;
     let mut labels = l.labels.clone();
     f(&mut labels)?;
-    let relock = !same_class_list(&l.labels, &labels);
+    let relock = !same_class_list(&l.labels, &labels) || !same_places(&l.labels, &labels);
     l.labels = labels;
     if relock {
         s.map_mut().label_lock = None;
@@ -280,6 +280,15 @@ pub(crate) fn with_labels(s: &mut Session, p: &Value, f: impl FnOnce(&mut Labeli
 /// where they are placed next (`Map::label_lock` emptied, #732).
 pub(crate) fn same_class_list(a: &Labeling, b: &Labeling) -> bool {
     a.classes.iter().map(|c| &c.name).eq(b.classes.iter().map(|c| &c.name))
+}
+
+/// Whether the classes of `a` and `b` (listed alike) put their point labels in the same places.
+/// A lock names the place round its point a label took by its number among its class's (#1011),
+/// so another position, or trying the others turned on or off, locks the labels again; with no
+/// class trying them a new position keeps the lock, as before.
+fn same_places(a: &Labeling, b: &Labeling) -> bool {
+    let classes = |l: &Labeling| l.classes.iter().chain([&l.default]).map(|c| (c.placement, c.other_positions)).collect::<Vec<_>>();
+    classes(a).into_iter().zip(classes(b)).all(|(x, y)| x == y || !(x.1 || y.1))
 }
 
 /// The place of the class named `name` among those checked before Default (of the

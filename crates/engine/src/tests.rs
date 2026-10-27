@@ -2395,6 +2395,32 @@ fn labels_take_an_offset_and_a_background() {
     assert_eq!(class(&reopened), class(&s));
 }
 
+/// A lock names the place round its point a label took by its number among its class's (#1011): a
+/// class trying the others locks the labels again when its position changes, not when its offset
+/// does; one that doesn't keeps the lock, as before.
+#[test]
+fn a_change_to_where_point_labels_go_locks_them_again() {
+    use crate::render::View;
+    let mut s = world();
+    s.run("labels.enable", &json!({"layer": "Cities", "on": true})).unwrap();
+    s.run("labels.lock", &json!({"on": true})).unwrap();
+    let draw = |s: &mut Session| {
+        let v = View { width: 800.0, height: 600.0, pixels_per_point: 1.0, camera: s.map().camera, sky: false };
+        crate::render::render(s.map_mut(), &v).unwrap();
+    };
+    draw(&mut s);
+    s.run("labels.placement", &json!({"layer": "Cities", "position": "below"})).unwrap();
+    assert!(s.map().label_lock.is_some(), "no class tries other places: the lock is kept");
+    let id = s.map().layer_by_name("Cities").unwrap().id;
+    s.map_mut().layer_mut(id).unwrap().labels.default.other_positions = true;
+    s.run("labels.placement", &json!({"layer": "Cities", "offset": [2, 2]})).unwrap();
+    assert!(s.map().label_lock.is_some(), "an offset moves every place alike: the lock is kept");
+    s.run("labels.placement", &json!({"layer": "Cities", "position": "above"})).unwrap();
+    assert!(s.map().label_lock.is_none(), "another position: locked again");
+    draw(&mut s);
+    assert!(s.map().label_lock.is_some(), "locked on the next frame");
+}
+
 /// A lock names each label by its class's place in the list: a change to the list (a class added,
 /// moved or removed) locks the labels again on the next frame, a change within a class keeps the
 /// lock (#732).
