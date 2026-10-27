@@ -3652,8 +3652,8 @@ fn render_frame(map: &mut Map, view: &View, full_res_rasters: bool, backend: Bac
         None => (view.width, view.height),
     };
     let placed = place_labels(label_candidates, fixed_labels, lw as f32, lh as f32, lock.is_some());
-    // (Never from a tilted view's: its labels' places out of sight are dropped, so the numbers of
-    // the places they take aren't those of their class's.)
+    // (The lock is never taken from a tilted view: its labels' places out of sight are dropped,
+    // so the numbers of the places they take aren't those of their class's.)
     if display.locked && map.label_lock.is_none() && !matches!(labels_to, Labels::Tilted(..)) {
         map.label_lock = Some(placed.keys);
     }
@@ -4814,17 +4814,24 @@ mod tests {
     #[test]
     fn places_many_labels_quickly() {
         // A grid of 20,000 candidates, a third of them fitting: placed without testing each
-        // against every other.
-        let cands: Vec<Candidate> = (0..20_000)
-            .map(|i| {
-                let (x, y) = ((i % 200) as f32 * 10.0, (i / 200) as f32 * 10.0);
-                (PlacedLabel { x, y, ..label("ab", x, None, 0.0) }, -f64::from(i), (u32::MAX, i as usize, 0, 0)).into()
-            })
-            .collect();
-        let start = web_time::Instant::now();
-        let p = place_labels(cands, Vec::new(), 2000.0, 1000.0, false);
-        assert!(!p.labels.is_empty() && p.labels.len() < 20_000);
-        assert!(start.elapsed() < web_time::Duration::from_secs(5));
+        // against every other, also when each has seven places round it to try (#1011).
+        let round = [(-6.0, -6.0), (6.0, -6.0), (-6.0, 6.0), (6.0, 6.0), (-8.0, 0.0), (8.0, 0.0), (0.0, 8.0)];
+        let cands = |others: bool| -> Vec<Candidate> {
+            (0..20_000)
+                .map(|i| {
+                    let (x, y) = ((i % 200) as f32 * 10.0, (i / 200) as f32 * 10.0);
+                    let l = PlacedLabel { x, y, ..label("ab", x, None, 0.0) };
+                    let alternatives = if others { round.map(|(dx, dy)| (x + dx, y + dy)).to_vec() } else { Vec::new() };
+                    Candidate { label: l, priority: -f64::from(i), key: (u32::MAX, i as usize, 0, 0), alternatives }
+                })
+                .collect()
+        };
+        for others in [false, true] {
+            let start = web_time::Instant::now();
+            let p = place_labels(cands(others), Vec::new(), 2000.0, 1000.0, false);
+            assert!(!p.labels.is_empty() && p.labels.len() < 20_000);
+            assert!(start.elapsed() < web_time::Duration::from_secs(5), "with places round them: {others}");
+        }
     }
 
     #[test]
