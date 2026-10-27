@@ -5090,8 +5090,11 @@ mod tests {
         let mut d = Dataset::new("pts", GeometryType::Point, vec![Field::new("name", FieldType::Text)]);
         d.push(Some(Geometry::Point(paris)), vec![Value::Text("Paris".into())]);
         let id = m.add_dataset(d);
-        // Capitals, listed first, takes the place above the point that Default wants too.
+        // Capitals, listed first, takes the place above the point that Default wants too. A big
+        // marker keeps the labels round it well apart: a tilted view draws their distance from
+        // the point on the ground, shortened up and down, while the labels stay their size.
         if let Some(l) = m.layer_mut(id) {
+            l.renderer = rustgis_map::Renderer::Single(Symbol { size: 20.0, ..l.symbol(0) });
             l.labels.enabled = true;
             l.labels.default.placement = rustgis_map::LabelPlacement::Above;
             let base = l.labels.default.clone();
