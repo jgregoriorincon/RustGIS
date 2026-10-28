@@ -594,6 +594,97 @@ fn hostile_panel_states_are_tamed() {
     assert_eq!(st.items["local"].label, None);
 }
 
+/// The test panel with a catalogue tree added.
+fn tree_panel() -> crate::PanelDecl {
+    let mut m: Value = serde_json::from_str(&testing::panel_manifest("tree-panel")).unwrap();
+    let tree = json!({"kind": "tree", "id": "catalogue", "label": "Catalogue", "command": "q", "search": true});
+    m["panel"]["items"].as_array_mut().unwrap().push(tree);
+    Manifest::parse(&m.to_string()).unwrap().panel.unwrap()
+}
+
+/// A tree takes its nodes from the plugin, and the chosen node's id as its value: one of its
+/// nodes, or none (#1050).
+#[test]
+fn a_panel_tree_takes_nodes_and_a_chosen_one() {
+    use crate::PanelState;
+    let decl = tree_panel();
+    let mut st = PanelState::new(&decl);
+    assert_eq!(st.values["catalogue"], Value::Null);
+    assert_eq!(st.request(&[])["values"]["catalogue"], Value::Null, "none chosen goes as null");
+    let nodes = json!([
+        {"id": "env", "label": "Ambiente", "count": 2, "children": [{"id": "501", "label": "Árboles"}, {"id": "502"}]},
+        {"id": "farm", "label": "Agricultura", "count": 1, "children": [{"id": "601", "label": "Productividad Rural"}]},
+    ]);
+    st.apply(&decl, &json!({"items": {"catalogue": {"nodes": nodes}}, "values": {"catalogue": "601"}}));
+    let tree = &st.items["catalogue"].nodes;
+    assert_eq!(tree.len(), 2);
+    assert_eq!((tree[0].count, tree[0].children[1].label.as_str()), (Some(2), "502"), "a label defaults to the id");
+    assert_eq!(st.chosen("catalogue"), Some("601"), "the nodes first, then the value among them");
+    // The pane or a script chooses another by id; one not in the tree, or not a string, is ignored.
+    assert_eq!(st.set_values(&decl, &json!({"catalogue": "501"})), ["catalogue"]);
+    assert_eq!(st.chosen("catalogue"), Some("501"));
+    assert!(st.set_values(&decl, &json!({"catalogue": "999"})).is_empty());
+    assert!(st.set_values(&decl, &json!({"catalogue": 501})).is_empty());
+    assert_eq!(st.chosen("catalogue"), Some("501"));
+    assert_eq!(st.request(&[])["values"]["catalogue"], "501");
+    // New nodes without the chosen one: none chosen.
+    st.apply(&decl, &json!({"items": {"catalogue": {"nodes": [{"id": "env"}]}}}));
+    assert_eq!(st.chosen("catalogue"), None);
+    assert_eq!(st.values["catalogue"], Value::Null);
+}
+
+/// A tree's nodes are hostile input: past the limits they are cut, a node without an id or with
+/// one taken already is left out with its children, and junk is ignored.
+#[test]
+fn hostile_panel_trees_are_tamed() {
+    use crate::PanelState;
+    use crate::panel::{MAX_STATE_LABEL, MAX_TREE_DEPTH, MAX_TREE_ID, MAX_TREE_NODES, TreeNode};
+    fn count(n: &[TreeNode]) -> usize {
+        n.iter().map(|n| 1 + count(&n.children)).sum()
+    }
+    fn depth(n: &[TreeNode]) -> usize {
+        n.iter().map(|n| 1 + depth(&n.children)).max().unwrap_or(0)
+    }
+    let decl = tree_panel();
+    let fresh = PanelState::new(&decl);
+    let nodes = |v: Value| {
+        let mut st = fresh.clone();
+        st.apply(&decl, &json!({"items": {"catalogue": {"nodes": v}}}));
+        st.items["catalogue"].nodes.clone()
+    };
+    // Too many: the first ones kept.
+    let many: Vec<Value> = (0..MAX_TREE_NODES * 2).map(|i| json!({"id": i.to_string()})).collect();
+    assert_eq!(count(&nodes(json!(many))), MAX_TREE_NODES);
+    // Too deep: cut at the limit.
+    let mut deep = json!({"id": "leaf"});
+    for i in 0..MAX_TREE_DEPTH * 3 {
+        deep = json!({"id": format!("n{i}"), "children": [deep]});
+    }
+    assert_eq!(depth(&nodes(json!([deep]))), MAX_TREE_DEPTH);
+    // Ids missing, empty, too long, not text or taken; labels clipped.
+    let got = nodes(json!([
+        {"label": "no id"}, {"id": ""}, {"id": "x".repeat(MAX_TREE_ID + 1)}, {"id": 7},
+        {"id": "a", "label": "y".repeat(MAX_STATE_LABEL * 3), "count": -1},
+        {"id": "two-lines", "label": "Ambiente\nAgua"},
+        {"id": "b", "children": [{"id": "a"}, {"id": "c", "children": "junk"}]},
+    ]));
+    assert_eq!(got.iter().map(|n| n.id.as_str()).collect::<Vec<_>>(), ["a", "two-lines", "b"]);
+    assert_eq!(got[1].label, "Ambiente Agua", "a label is one line");
+    assert_eq!(got[0].label.chars().count(), MAX_STATE_LABEL);
+    assert_eq!(got[0].count, None, "a count is a whole number from 0");
+    assert_eq!(got[2].children.iter().map(|n| n.id.as_str()).collect::<Vec<_>>(), ["c"], "an id taken already is left out");
+    for junk in [Value::Null, json!(5), json!("nodes"), json!({"id": "a"}), json!([1, null, "a", [[]]])] {
+        assert!(nodes(junk.clone()).is_empty(), "{junk}");
+    }
+    // `search` is for trees, and a tree has no default.
+    let mut m: Value = serde_json::from_str(&testing::panel_manifest("bad-tree")).unwrap();
+    m["panel"]["items"][0]["search"] = json!(true);
+    assert!(Manifest::parse(&m.to_string()).unwrap_err().contains("search is for trees"));
+    let mut m: Value = serde_json::from_str(&testing::panel_manifest("bad-tree")).unwrap();
+    m["panel"]["items"].as_array_mut().unwrap().push(json!({"kind": "tree", "id": "t", "default": "a"}));
+    assert!(Manifest::parse(&m.to_string()).unwrap_err().contains("only checkboxes and sliders have a default"));
+}
+
 #[test]
 fn registry_entries_say_how_a_plugin_runs() {
     use crate::manifest::Runtime;

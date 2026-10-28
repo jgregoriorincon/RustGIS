@@ -1,5 +1,5 @@
-//! A plugin's panel (`panel` in its `plugin.json`): a right pane of texts, checkboxes, sliders and
-//! buttons bound to the plugin's commands.
+//! A plugin's panel (`panel` in its `plugin.json`): a right pane of texts, checkboxes, sliders,
+//! buttons and trees bound to the plugin's commands.
 //!
 //! The session keeps the panel's state ([`rustgis_engine::plugins::PanelState`]); this draws it
 //! and turns the user's changes into commands: a widget with a command runs
@@ -8,7 +8,9 @@
 //! the keys), never while it is dragged: until then the pane shows the value it would take.
 
 use egui::{Align2, CornerRadius, RichText, Sense, Stroke, Ui, pos2, vec2};
-use rustgis_engine::plugins::{Manifest, PanelItemDecl, PanelState, command_id};
+use std::collections::{HashMap, HashSet};
+
+use rustgis_engine::plugins::{Manifest, PanelItemDecl, PanelState, TreeNode, command_id};
 use serde_json::{Value, json};
 
 use crate::theme::{Tokens, regular, semibold};
@@ -21,6 +23,9 @@ pub struct State {
     pub plugin: Option<String>,
     /// A slider being dragged: plugin, widget and the value it shows (not yet sent).
     dragging: Option<(String, String, i64)>,
+    /// Each tree's open nodes, and what its search box holds, by widget id.
+    open: HashMap<String, HashSet<String>>,
+    search: HashMap<String, String>,
 }
 
 /// The panel's title (its tab), in the interface language.
@@ -56,7 +61,7 @@ pub fn open(app: &mut RustGisApp, p: &Value) -> Result<Value, String> {
     if plugin.manifest.panel.is_none() {
         return Err(format!("{} has no panel", plugin.manifest.name));
     }
-    app.ui.plugin_panel = State { plugin: Some(id.to_string()), dragging: None };
+    app.ui.plugin_panel = State { plugin: Some(id.to_string()), ..State::default() };
     app.ui.open_right(RightPane::Plugin);
     // The panel opens even if its state command fails: the error is in the status bar.
     if let Err(e) = app.run("plugin.panel", json!({"id": id, "refresh": true})) {
@@ -128,6 +133,7 @@ pub fn show(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
             "text" => text(ui, item, &state, &tr, t),
             "checkbox" => checkbox(app, ui, &pid, item, &state, &tr),
             "slider" => slider(app, ui, &pid, item, &state, &tr, t),
+            "tree" => tree(app, ui, &pid, item, &state, &tr, t),
             _ => {}
         }
         ui.add_space(8.0);
@@ -264,6 +270,156 @@ fn slider(app: &mut RustGisApp, ui: &mut Ui, pid: &str, item: &PanelItemDecl, st
         });
     });
     if let Some(n) = stepped.map(|n| n.clamp(min, max)).filter(|n| *n != stored) {
+        send(app, pid, item, json!(n));
+    }
+}
+
+/// A tree's row height, and how far each level is indented.
+const TREE_ROW: f32 = 22.0;
+const TREE_INDENT: f32 = 14.0;
+
+/// A row of a tree as shown: a node, how deep it is, whether its children show below it, and
+/// whether they must (a branch above what a search found).
+struct TreeRow<'a> {
+    node: &'a TreeNode,
+    depth: usize,
+    open: bool,
+    held: bool,
+}
+
+/// Lower case without accents, so that "arbol" finds "Árboles".
+fn fold(s: &str) -> String {
+    s.to_lowercase()
+        .chars()
+        .map(|c| match c {
+            'á' | 'à' | 'â' | 'ä' | 'ã' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'í' | 'ì' | 'î' | 'ï' => 'i',
+            'ó' | 'ò' | 'ô' | 'ö' | 'õ' => 'o',
+            'ú' | 'ù' | 'û' | 'ü' => 'u',
+            'ñ' => 'n',
+            'ç' => 'c',
+            c => c,
+        })
+        .collect()
+}
+
+/// The rows of `nodes`: with no `words`, each node and, when open, its children; searching, the
+/// nodes whose label holds every word (shown as they are) and the branches above them, open.
+fn tree_rows<'a>(nodes: &'a [TreeNode], depth: usize, words: &[String], open: &HashSet<String>, out: &mut Vec<TreeRow<'a>>) {
+    for n in nodes {
+        let at = out.len();
+        out.push(TreeRow { node: n, depth, open: false, held: false });
+        if words.is_empty() || {
+            let label = fold(&n.label);
+            words.iter().all(|w| label.contains(w.as_str()))
+        } {
+            if open.contains(&n.id) && !n.children.is_empty() {
+                if let Some(r) = out.get_mut(at) {
+                    r.open = true;
+                }
+                tree_rows(&n.children, depth + 1, &[], open, out);
+            }
+        } else {
+            // Kept only for what matches below it.
+            tree_rows(&n.children, depth + 1, words, open, out);
+            if out.len() == at + 1 {
+                out.pop();
+            } else if let Some(r) = out.get_mut(at) {
+                (r.open, r.held) = (true, true);
+            }
+        }
+    }
+}
+
+/// A tree: a row per node, a branch's children indented under it while it is open. A click
+/// chooses a node (running the widget's command); the triangle, or a double click, opens or
+/// closes a branch. With `search`, a box above it keeps the nodes whose label holds the words
+/// typed, with the branches above them held open (a branch found opens and closes as ever).
+fn tree(app: &mut RustGisApp, ui: &mut Ui, pid: &str, item: &PanelItemDecl, state: &PanelState, tr: &dyn Fn(&str) -> String, t: &Tokens) {
+    let id = item.key();
+    let Some(st) = state.items.get(id) else { return };
+    let label = label_of(item, state, tr);
+    if !label.is_empty() {
+        ui.label(RichText::new(label).size(11.0).color(t.text_dim));
+    }
+    let on = enabled(item, state);
+    if item.search {
+        // As the Layers pane's filter box: the shared search field, over a separator.
+        let query = app.ui.plugin_panel.search.entry(id.to_string()).or_default();
+        ui.add_enabled_ui(on, |ui| crate::widgets::search_field(ui, query, tl!("Search")));
+        ui.separator();
+    }
+    let words: Vec<String> =
+        app.ui.plugin_panel.search.get(id).map(|q| fold(q).split_whitespace().map(String::from).collect()).unwrap_or_default();
+    let none = HashSet::new();
+    let open = app.ui.plugin_panel.open.get(id).unwrap_or(&none);
+    let mut rows = Vec::new();
+    tree_rows(&st.nodes, 0, &words, open, &mut rows);
+    if rows.is_empty() {
+        let empty = if words.is_empty() { "—" } else { tl!("Nothing matches.") };
+        ui.label(RichText::new(empty).size(12.5).color(t.text_dim));
+        return;
+    }
+    let chosen = state.chosen(id);
+    let (mut toggle, mut pick) = (None, None);
+    egui::ScrollArea::vertical().id_salt(("plugin-tree", pid, id)).max_height(320.0).auto_shrink([false, true]).show_rows(
+        ui,
+        TREE_ROW,
+        rows.len(),
+        |ui, range| {
+            for r in rows.iter().skip(range.start).take(range.len()) {
+                let (rect, resp) =
+                    ui.allocate_exact_size(vec2(ui.available_width(), TREE_ROW), if on { Sense::click() } else { Sense::hover() });
+                let here = chosen == Some(r.node.id.as_str());
+                if here {
+                    ui.painter().rect_filled(rect, CornerRadius::same(4), t.checked);
+                } else if on && resp.hovered() {
+                    ui.painter().rect_filled(rect, CornerRadius::same(4), t.hover);
+                }
+                let ink = if on { t.text } else { t.text_disabled };
+                let x = rect.left() + 4.0 + r.depth as f32 * TREE_INDENT;
+                let branch = !r.node.children.is_empty();
+                let arrow = egui::Rect::from_min_size(pos2(x, rect.top()), vec2(TREE_INDENT, TREE_ROW));
+                if branch {
+                    let c = arrow.center();
+                    let pts = if r.open {
+                        vec![pos2(c.x - 4.0, c.y - 2.0), pos2(c.x + 4.0, c.y - 2.0), pos2(c.x, c.y + 3.0)]
+                    } else {
+                        vec![pos2(c.x - 2.0, c.y - 4.0), pos2(c.x + 3.0, c.y), pos2(c.x - 2.0, c.y + 4.0)]
+                    };
+                    ui.painter().add(egui::Shape::convex_polygon(pts, t.text_dim, Stroke::NONE));
+                }
+                // The count at the right, the label in what's left of the row.
+                let mut right = rect.right() - 6.0;
+                if let Some(n) = r.node.count {
+                    let g = ui.painter().layout_no_wrap(format!("({n})"), regular(12.0), t.text_dim);
+                    right -= g.size().x;
+                    ui.painter().galley(pos2(right, rect.center().y - g.size().y / 2.0), g, t.text_dim);
+                    right -= 8.0;
+                }
+                let text = egui::Rect::from_min_max(pos2(arrow.right() + 2.0, rect.top()), pos2(right, rect.bottom()));
+                let font = if branch { semibold(12.5) } else { regular(12.5) };
+                ui.painter().with_clip_rect(text).text(pos2(text.left(), rect.center().y), Align2::LEFT_CENTER, &r.node.label, font, ink);
+                let resp = resp.on_hover_text(r.node.label.as_str());
+                resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::TreeItem, on, here, &r.node.label));
+                // A branch held open over what a search found doesn't close.
+                let on_arrow = resp.interact_pointer_pos().is_some_and(|p| arrow.contains(p));
+                if branch && !r.held && (resp.double_clicked() || (resp.clicked() && on_arrow)) {
+                    toggle = Some(r.node.id.clone());
+                } else if resp.clicked() && !here {
+                    pick = Some(r.node.id.clone());
+                }
+            }
+        },
+    );
+    if let Some(n) = toggle {
+        let open = app.ui.plugin_panel.open.entry(id.to_string()).or_default();
+        if !open.remove(&n) {
+            open.insert(n);
+        }
+    }
+    if let Some(n) = pick {
         send(app, pid, item, json!(n));
     }
 }

@@ -278,8 +278,8 @@ an example.
 
 ### A panel
 
-A plugin can have a panel: a pane on the right of the map with texts, checkboxes, sliders and
-buttons bound to its commands. Declare it in `plugin.json`:
+A plugin can have a panel: a pane on the right of the map with texts, checkboxes, sliders,
+buttons and trees bound to its commands. Declare it in `plugin.json`:
 
 ```json
 "panel": {
@@ -311,9 +311,14 @@ buttons bound to its commands. Declare it in `plugin.json`:
       to `0`; `default` is `min` unless given), with a caption, the value's label, and its two
       ends' labels. `steps: true` adds ‹ and › buttons that move it by one.
     - `button`: runs its `command`; its `label` is the command's unless given.
-- A checkbox runs its `command` when it changes, and a slider when it is let go, or stepped:
-  never while it is dragged, while the pane shows the label of the value it would take. Without
-  a `command`, a widget's value just goes with the plugin's next request.
+    - `tree`: nodes the plugin gives (themes, their datasets, say), each branch opened or closed
+      with its triangle or a double click. `search: true` adds a box above it that keeps the
+      nodes whose label holds every word typed (case and accents aside), with the branches
+      above them open.
+- A checkbox runs its `command` when it changes, a slider when it is let go, or stepped
+  (never while it is dragged, while the pane shows the label of the value it would take), and a
+  tree when a node is chosen. Without a `command`, a widget's value just goes with the plugin's
+  next request.
 - `state` (optional) is a command RustGIS runs each time the panel is opened, to answer its
   state.
 - Every `command` reference, including `state`, must name one of the plugin's own commands.
@@ -328,8 +333,8 @@ button, a script or the command line):
 "panel": { "values": { "local": false, "release": 196 }, "changed": ["release"] }
 ```
 
-`values` has each checkbox (`true` or `false`) and slider (a whole number), and `changed` the
-ones this call set: the widget the user just moved. A widget's command is run with
+`values` has each checkbox (`true` or `false`), slider (a whole number) and tree (the chosen
+node's id, or `null`), and `changed` the ones this call set: the widget the user just moved. A widget's command is run with
 `{"panel": {"release": 196}}` as its parameters, which sets the values before the call and is
 taken out of the request's `params`, so a script or `rustgis-cli` can do the same:
 
@@ -355,10 +360,17 @@ Any command can answer the panel's new state, beside the rest of its answer:
 
 - An item can set `label` (`null` brings back the declared one), `enabled` and `visible`; a text
   its `text`; a slider its `min`, `max` and `labels`, one per value from `min` (the numbers when
-  there are none). What an answer leaves out stays as it was.
+  there are none); a tree its `nodes`. What an answer leaves out stays as it was.
+- A tree's `nodes` are `[{"id": "env", "label": "Environment", "count": 67, "children": [...]}]`:
+  `id` is the value the node gives when chosen, unique in the tree; `label` defaults to the id;
+  `count` (a whole number) shows at the right of the row. The nodes come before the values in an
+  answer, so one can give a tree and choose a node of it; a chosen node no longer among them
+  leaves nothing chosen.
 - RustGIS checks the answer like any other: unknown ids and fields and values of the wrong type
-  are ignored, a slider's value stays within its ends, texts are clipped to 4,000 characters,
-  labels to 200, and a slider has at most 2,000 labels of 80 characters.
+  are ignored, a slider's value stays within its ends and a tree's among its nodes, texts are
+  clipped to 4,000 characters, labels to 200, and a slider has at most 2,000 labels of 80
+  characters. A tree holds at most 5,000 nodes, 8 levels deep; a node without an id, or with one
+  longer than 200 characters or taken already, is left out with its children.
 - A plugin words what it sets in the request's `lang`; RustGIS translates only what the
   manifest declares.
 - A command that fails leaves the values as they were. The panel's state command is no undo
