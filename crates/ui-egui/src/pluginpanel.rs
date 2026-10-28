@@ -288,20 +288,10 @@ struct TreeRow<'a> {
 }
 
 /// Lower case without accents, so that "arbol" finds "Árboles".
+/// Letters are decomposed and their marks dropped, whether the text came with them composed or not.
 fn fold(s: &str) -> String {
-    s.to_lowercase()
-        .chars()
-        .map(|c| match c {
-            'á' | 'à' | 'â' | 'ä' | 'ã' => 'a',
-            'é' | 'è' | 'ê' | 'ë' => 'e',
-            'í' | 'ì' | 'î' | 'ï' => 'i',
-            'ó' | 'ò' | 'ô' | 'ö' | 'õ' => 'o',
-            'ú' | 'ù' | 'û' | 'ü' => 'u',
-            'ñ' => 'n',
-            'ç' => 'c',
-            c => c,
-        })
-        .collect()
+    use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
+    s.nfd().filter(|c| !is_combining_mark(*c)).flat_map(char::to_lowercase).collect()
 }
 
 /// Whether `label` holds every word of a search (folded as [`fold`] folds them).
@@ -359,8 +349,13 @@ fn tree(app: &mut RustGisApp, ui: &mut Ui, pid: &str, item: &PanelItemDecl, stat
         ui.add_enabled_ui(on, |ui| crate::widgets::search_field(ui, query, tl!("Search")));
         ui.separator();
     }
-    let words: Vec<String> =
-        app.ui.plugin_panel.search.get(id).map(|q| fold(q).split_whitespace().map(String::from).collect()).unwrap_or_default();
+    // (Only with its box: a plugin updated without one leaves no search behind that can't be cleared.)
+    let mut words: Vec<String> = match app.ui.plugin_panel.search.get(id) {
+        Some(q) if item.search => fold(q).split_whitespace().map(String::from).collect(),
+        _ => Vec::new(),
+    };
+    words.sort_unstable();
+    words.dedup();
     let none = HashSet::new();
     let open = app.ui.plugin_panel.open.get(id).unwrap_or(&none);
     let mut rows = Vec::new();
@@ -399,13 +394,16 @@ fn tree(app: &mut RustGisApp, ui: &mut Ui, pid: &str, item: &PanelItemDecl, stat
                     };
                     ui.painter().add(egui::Shape::convex_polygon(pts, t.text_dim, Stroke::NONE));
                 }
-                // The count at the right, the label in what's left of the row.
+                // The count at the right, the label in what's left of the row: on a narrow pane,
+                // deep down, the label keeps its room and the count goes.
                 let mut right = rect.right() - 6.0;
                 if let Some(n) = r.node.count {
                     let g = ui.painter().layout_no_wrap(format!("({n})"), regular(12.0), t.text_dim);
-                    right -= g.size().x;
-                    ui.painter().galley(pos2(right, rect.center().y - g.size().y / 2.0), g, t.text_dim);
-                    right -= 8.0;
+                    if right - g.size().x - 8.0 >= arrow.right() + 2.0 + 40.0 {
+                        right -= g.size().x;
+                        ui.painter().galley(pos2(right, rect.center().y - g.size().y / 2.0), g, t.text_dim);
+                        right -= 8.0;
+                    }
                 }
                 let text = egui::Rect::from_min_max(pos2(arrow.right() + 2.0, rect.top()), pos2(right, rect.bottom()));
                 let font = if branch { semibold(12.5) } else { regular(12.5) };
@@ -479,6 +477,10 @@ mod tests {
         let nested = vec![node("cul", "Cultura", vec![node("live", "Cultura viva", vec![]), node("c1", "Teatro", vec![])])];
         assert_eq!(shown(&nested, "cultura", &[]), ["cul/*", "  live"]);
         assert!(shown(&tree, "zzz", &["env"]).is_empty());
-        assert_eq!(fold("Ñandú Çà"), "nandu ca");
+        assert_eq!(fold("Ñandú Çà Åland"), "nandu ca aland");
+        // Decomposed accents (a letter, then its mark) fold as composed ones do.
+        let decomposed = vec![node("601", "A\u{301}rboles urbanos", vec![])];
+        assert_eq!(shown(&decomposed, "arbol", &[]), ["601"]);
+        assert_eq!(shown(&decomposed, "árbol arbol", &[]), ["601"], "a word given twice");
     }
 }

@@ -248,11 +248,14 @@ fn tree_nodes(v: &[Value], depth: usize, left: &mut usize, seen: &mut std::colle
             continue;
         }
         *left -= 1;
-        let label = n
+        let label: String = n
             .get("label")
             .and_then(Value::as_str)
             .filter(|l| !l.trim().is_empty())
-            .map_or_else(|| id.to_string(), |l| clip(l, MAX_STATE_LABEL).chars().map(|c| if c.is_control() { ' ' } else { c }).collect());
+            .map_or_else(|| id.to_string(), |l| clip(l, MAX_STATE_LABEL))
+            .chars()
+            .map(|c| if c.is_control() { ' ' } else { c })
+            .collect();
         let children = match n.get("children").and_then(Value::as_array) {
             Some(c) if depth + 1 < MAX_TREE_DEPTH => tree_nodes(c, depth + 1, left, seen),
             _ => Vec::new(),
