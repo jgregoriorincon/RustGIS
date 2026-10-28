@@ -310,27 +310,32 @@ fn holds_words(label: &str, words: &[String]) -> bool {
     words.iter().all(|w| label.contains(w.as_str()))
 }
 
-/// The rows of `nodes`: with no `words`, each node and, when open, its children; searching, the
-/// nodes whose label holds every word (shown as they are) and the branches above them, open.
+/// The rows of `nodes`: with no `words`, each node and, when open, its children. Searching, the
+/// nodes whose label holds every word, and every branch above one held open, a branch found too;
+/// a branch found with nothing found below it shows as it is, opening as ever.
 fn tree_rows<'a>(nodes: &'a [TreeNode], depth: usize, words: &[String], open: &HashSet<String>, out: &mut Vec<TreeRow<'a>>) {
     for n in nodes {
         let at = out.len();
         out.push(TreeRow { node: n, depth, open: false, held: false });
-        if words.is_empty() || holds_words(&n.label, words) {
-            if open.contains(&n.id) && !n.children.is_empty() {
-                if let Some(r) = out.get_mut(at) {
-                    r.open = true;
-                }
-                tree_rows(&n.children, depth + 1, &[], open, out);
-            }
-        } else {
-            // Kept only for what matches below it.
+        if !words.is_empty() {
+            // What's found below it first.
             tree_rows(&n.children, depth + 1, words, open, out);
-            if out.len() == at + 1 {
-                out.pop();
-            } else if let Some(r) = out.get_mut(at) {
-                (r.open, r.held) = (true, true);
+            if out.len() > at + 1 {
+                if let Some(r) = out.get_mut(at) {
+                    (r.open, r.held) = (true, true);
+                }
+                continue;
             }
+            if !holds_words(&n.label, words) {
+                out.pop();
+                continue;
+            }
+        }
+        if open.contains(&n.id) && !n.children.is_empty() {
+            if let Some(r) = out.get_mut(at) {
+                r.open = true;
+            }
+            tree_rows(&n.children, depth + 1, &[], open, out);
         }
     }
 }
@@ -338,8 +343,8 @@ fn tree_rows<'a>(nodes: &'a [TreeNode], depth: usize, words: &[String], open: &H
 /// A tree: a row per node, a branch's children indented under it while it is open. A click
 /// chooses a node (running the widget's command); the triangle, or a double click, opens or
 /// closes a branch (a click on the triangle never chooses it; the first click of a double click
-/// does, as a file browser's). With `search`, a box above it keeps the nodes whose label holds the words
-/// typed, with the branches above them held open (a branch found opens and closes as ever).
+/// does, as a file browser's). With `search`, a box above it keeps the nodes whose label holds
+/// the words typed, with the branches above them held open ([`tree_rows`]).
 fn tree(app: &mut RustGisApp, ui: &mut Ui, pid: &str, item: &PanelItemDecl, state: &PanelState, tr: &dyn Fn(&str) -> String, t: &Tokens) {
     let id = item.key();
     let Some(st) = state.items.get(id) else { return };
@@ -461,14 +466,18 @@ mod tests {
                 vec![node("trees", "Arborización", vec![node("601", "Árboles urbanos", vec![])]), node("water", "Agua", vec![])],
             ),
             node("cul", "Cultura", vec![node("c1", "Teatro", vec![])]),
+            node("arts", "Artes", vec![node("live", "Cultura viva", vec![]), node("film", "Cine", vec![])]),
         ];
-        assert_eq!(shown(&tree, "", &[]), ["env", "cul"]);
-        assert_eq!(shown(&tree, "", &["env"]), ["env/", "  trees", "  water", "cul"]);
-        assert_eq!(shown(&tree, "", &["trees"]), ["env", "cul"], "an open branch under a closed one stays hidden");
+        assert_eq!(shown(&tree, "", &[]), ["env", "cul", "arts"]);
+        assert_eq!(shown(&tree, "", &["env"]), ["env/", "  trees", "  water", "cul", "arts"]);
+        assert_eq!(shown(&tree, "", &["trees"]), ["env", "cul", "arts"], "an open branch under a closed one stays hidden");
         assert_eq!(shown(&tree, "arbol", &[]), ["env/*", "  trees/*", "    601"]);
         assert_eq!(shown(&tree, "ÁRBOLES urb", &[]), ["env/*", "  trees/*", "    601"], "every word, case and accents aside");
-        assert_eq!(shown(&tree, "cultura", &[]), ["cul"], "a branch found shows as it is");
-        assert_eq!(shown(&tree, "cultura", &["cul"]), ["cul/", "  c1"], "and opens as ever");
+        assert_eq!(shown(&tree, "cultura", &[]), ["cul", "arts/*", "  live"], "a branch found shows as it is");
+        assert_eq!(shown(&tree, "cultura", &["cul"]), ["cul/", "  c1", "arts/*", "  live"], "and opens as ever");
+        // A branch found with something found below it is held open on that.
+        let nested = vec![node("cul", "Cultura", vec![node("live", "Cultura viva", vec![]), node("c1", "Teatro", vec![])])];
+        assert_eq!(shown(&nested, "cultura", &[]), ["cul/*", "  live"]);
         assert!(shown(&tree, "zzz", &["env"]).is_empty());
         assert_eq!(fold("Ñandú Çà"), "nandu ca");
     }
