@@ -26,9 +26,10 @@ pub struct State {
     /// Each tree's open nodes, and what its search box holds, by widget id.
     open: HashMap<String, HashSet<String>>,
     search: HashMap<String, String>,
-    /// The chosen node each tree last showed: one chosen since (by the plugin or a script) opens
-    /// the branches above it, once, so it shows and they can still be closed.
-    revealed: HashMap<String, String>,
+    /// Where each tree's chosen node last was (the branches above it, then it): a node chosen
+    /// since, or moved (by the plugin or a script), opens the branches above it, once, so it
+    /// shows and they can still be closed.
+    revealed: HashMap<String, Vec<String>>,
 }
 
 /// The panel's title (its tab), in the interface language.
@@ -377,14 +378,18 @@ fn tree(app: &mut RustGisApp, ui: &mut Ui, pid: &str, item: &PanelItemDecl, stat
     words.sort_unstable();
     words.dedup();
     let chosen = state.chosen(id);
-    if let Some(c) = chosen
-        && app.ui.plugin_panel.revealed.get(id).map(String::as_str) != Some(c)
-    {
+    let mut at: Vec<String> = Vec::new();
+    if let Some(c) = chosen {
         let mut above = Vec::new();
         if ancestors(&st.nodes, c, &mut above) {
-            app.ui.plugin_panel.open.entry(id.to_string()).or_default().extend(above.into_iter().map(String::from));
+            at = above.into_iter().map(String::from).chain([c.to_string()]).collect();
         }
-        app.ui.plugin_panel.revealed.insert(id.to_string(), c.to_string());
+    }
+    if app.ui.plugin_panel.revealed.get(id).is_none_or(|was| *was != at) {
+        if let Some((_, above)) = at.split_last() {
+            app.ui.plugin_panel.open.entry(id.to_string()).or_default().extend(above.iter().cloned());
+        }
+        app.ui.plugin_panel.revealed.insert(id.to_string(), at);
     }
     let none = HashSet::new();
     let open = app.ui.plugin_panel.open.get(id).unwrap_or(&none);
@@ -438,7 +443,11 @@ fn tree(app: &mut RustGisApp, ui: &mut Ui, pid: &str, item: &PanelItemDecl, stat
                 let font = if branch { semibold(12.5) } else { regular(12.5) };
                 ui.painter().with_clip_rect(text).text(pos2(text.left(), rect.center().y), Align2::LEFT_CENTER, &r.node.label, font, ink);
                 let resp = resp.on_hover_text(r.node.label.as_str());
-                resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::TreeItem, on, here, &r.node.label));
+                let spoken = match r.node.count {
+                    Some(n) => format!("{} ({n})", r.node.label),
+                    None => r.node.label.clone(),
+                };
+                resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::TreeItem, on, here, &spoken));
                 // A branch held open over what a search found doesn't close.
                 let on_arrow = resp.interact_pointer_pos().is_some_and(|p| arrow.contains(p));
                 // On the triangle each click opens or closes, once for a double click too.
