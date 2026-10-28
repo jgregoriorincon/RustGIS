@@ -288,10 +288,11 @@ struct TreeRow<'a> {
 }
 
 /// Lower case without accents, so that "arbol" finds "Árboles".
-/// Letters are decomposed and their marks dropped, whether the text came with them composed or not.
+/// Letters are decomposed and their marks dropped, whether the text came with them composed or not;
+/// lower case first, since some letters lower-case into a letter and a mark (`İ`).
 fn fold(s: &str) -> String {
     use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
-    s.nfd().filter(|c| !is_combining_mark(*c)).flat_map(char::to_lowercase).collect()
+    s.to_lowercase().nfd().filter(|c| !is_combining_mark(*c)).collect()
 }
 
 /// Whether `label` holds every word of a search (folded as [`fold`] folds them).
@@ -477,7 +478,7 @@ mod tests {
         let nested = vec![node("cul", "Cultura", vec![node("live", "Cultura viva", vec![]), node("c1", "Teatro", vec![])])];
         assert_eq!(shown(&nested, "cultura", &[]), ["cul/*", "  live"]);
         assert!(shown(&tree, "zzz", &["env"]).is_empty());
-        assert_eq!(fold("Ñandú Çà Åland"), "nandu ca aland");
+        assert_eq!(fold("Ñandú Çà Åland İzmir"), "nandu ca aland izmir");
         // Decomposed accents (a letter, then its mark) fold as composed ones do.
         let decomposed = vec![node("601", "A\u{301}rboles urbanos", vec![])];
         assert_eq!(shown(&decomposed, "arbol", &[]), ["601"]);

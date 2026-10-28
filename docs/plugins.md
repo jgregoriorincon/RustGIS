@@ -314,7 +314,7 @@ buttons and trees bound to its commands. Declare it in `plugin.json`:
     - `tree`: nodes the plugin gives (themes, their datasets, say), each branch opened or closed
       with its triangle or a double click. `search: true` adds a box above it that keeps the
       nodes whose label holds every word typed (case and accents aside), with the branches
-      above them open.
+      above them open; a branch found with nothing found below it opens to all its children.
 - A checkbox runs its `command` when it changes, a slider when it is let go, or stepped
   (never while it is dragged, while the pane shows the label of the value it would take), and a
   tree when a node is chosen. Without a `command`, a widget's value just goes with the plugin's
