@@ -2311,13 +2311,16 @@ fn label_range_placement_lock_and_convert() {
     assert!(s.map().label_lock.is_none());
     // Convert makes an annotation layer and turns the source's labels off; its labels stay on
     // their points, even when the source's went round them (#1011).
-    let countries = s.map().layer_by_name("Countries").unwrap().id;
-    s.map_mut().layer_mut(countries).unwrap().labels.default.other_positions = true;
+    s.run("labels.class.add", &json!({"layer": "Countries", "name": "Big", "where": "pop_est > 100000000"})).unwrap();
+    for class in ["Big", "Default"] {
+        s.run("labels.placement", &json!({"layer": "Countries", "class": class, "otherPositions": true})).unwrap();
+    }
     let r = s.run("labels.convert", &json!({"layer": "Countries"})).unwrap();
     assert!(r["annotations"].as_u64().unwrap() > 100);
     let a = s.map().layer_by_name("Countries Annotation").unwrap();
     assert!(a.labels.enabled && a.labels.default.field == "TEXT");
-    assert!(!a.labels.default.other_positions);
+    assert!(!a.labels.default.other_positions && !a.labels.classes.is_empty());
+    assert!(a.labels.classes.iter().all(|c| !c.other_positions), "every class's, not only Default's");
     assert!(!s.map().layer_by_name("Countries").unwrap().labels.enabled);
 }
 
@@ -2437,6 +2440,38 @@ fn labels_take_wrapping_and_a_repeat_along_lines() {
     let text = serde_json::to_string(&s.project).unwrap();
     let reopened = Session::new(serde_json::from_str(&text).unwrap());
     assert_eq!(class(&reopened), class(&s));
+}
+
+/// A point label class tries the other places round its point when told to (#1011): alone it keeps
+/// the position, junk is refused, it undoes, the project keeps it, and turning it off while the
+/// labels are locked locks them again (the places they took no longer stand).
+#[test]
+fn labels_take_other_positions_round_points() {
+    use crate::render::View;
+    let mut s = world();
+    let class = |s: &Session| {
+        let c = &s.map().layer_by_name("Cities").unwrap().labels.default;
+        (c.other_positions, c.placement)
+    };
+    let placement = class(&s).1;
+    assert_eq!(class(&s), (false, placement));
+    s.run("labels.placement", &json!({"layer": "Cities", "otherPositions": true})).unwrap();
+    assert_eq!(class(&s), (true, placement), "alone it keeps the position");
+    s.run("edit.undo", &json!({})).unwrap();
+    assert!(!class(&s).0, "undoes");
+    for bad in [json!("yes"), json!(1), Value::Null] {
+        assert!(s.run("labels.placement", &json!({"layer": "Cities", "otherPositions": bad})).is_err(), "{bad}");
+    }
+    s.run("labels.placement", &json!({"layer": "Cities", "otherPositions": true})).unwrap();
+    let text = serde_json::to_string(&s.project).unwrap();
+    assert!(Session::new(serde_json::from_str(&text).unwrap()).map().layer_by_name("Cities").unwrap().labels.default.other_positions);
+    s.run("labels.enable", &json!({"layer": "Cities", "on": true})).unwrap();
+    s.run("labels.lock", &json!({"on": true})).unwrap();
+    let v = View { width: 800.0, height: 600.0, pixels_per_point: 1.0, camera: s.map().camera, sky: false };
+    crate::render::render(s.map_mut(), &v).unwrap();
+    assert!(s.map().label_lock.is_some());
+    s.run("labels.placement", &json!({"layer": "Cities", "otherPositions": false})).unwrap();
+    assert!(s.map().label_lock.is_none(), "turned off: locked again");
 }
 
 /// A label class takes an offset with its placement and a background with its text symbol; junk
