@@ -235,9 +235,9 @@ pub struct TreeNode {
 /// (counted down) and [`MAX_TREE_DEPTH`] deep below `depth`. A node without an id, or with one
 /// taken already or too long, is left out with its children; a label defaults to the id (when
 /// missing or blank), and is kept to one line (a row of the tree).
-fn tree_nodes(v: &Value, depth: usize, left: &mut usize, seen: &mut std::collections::HashSet<String>) -> Vec<TreeNode> {
+fn tree_nodes(v: &[Value], depth: usize, left: &mut usize, seen: &mut std::collections::HashSet<String>) -> Vec<TreeNode> {
     let mut nodes = Vec::new();
-    for n in v.as_array().map(Vec::as_slice).unwrap_or_default() {
+    for n in v {
         if *left == 0 {
             break;
         }
@@ -253,7 +253,7 @@ fn tree_nodes(v: &Value, depth: usize, left: &mut usize, seen: &mut std::collect
             .and_then(Value::as_str)
             .filter(|l| !l.trim().is_empty())
             .map_or_else(|| id.to_string(), |l| clip(l, MAX_STATE_LABEL).replace(['\n', '\r'], " "));
-        let children = match n.get("children") {
+        let children = match n.get("children").and_then(Value::as_array) {
             Some(c) if depth + 1 < MAX_TREE_DEPTH => tree_nodes(c, depth + 1, left, seen),
             _ => Vec::new(),
         };
@@ -421,7 +421,7 @@ impl PanelState {
                 }
             }
             if d.kind == "tree"
-                && let Some(nodes) = u.get("nodes")
+                && let Some(nodes) = u.get("nodes").and_then(Value::as_array)
             {
                 let mut left = MAX_TREE_NODES;
                 st.nodes = Arc::new(tree_nodes(nodes, 0, &mut left, &mut Default::default()));

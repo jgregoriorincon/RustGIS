@@ -627,6 +627,12 @@ fn a_panel_tree_takes_nodes_and_a_chosen_one() {
     assert!(st.set_values(&decl, &json!({"catalogue": 501})).is_empty());
     assert_eq!(st.chosen("catalogue"), Some("501"));
     assert_eq!(st.request(&[])["values"]["catalogue"], "501");
+    // Nodes of the wrong type are ignored, as any value of the wrong type is: the tree stays.
+    for junk in [json!("oops"), json!({"id": "a"}), Value::Null, json!(5)] {
+        let mut kept = st.clone();
+        kept.apply(&decl, &json!({"items": {"catalogue": {"nodes": junk}}}));
+        assert_eq!((kept.items["catalogue"].nodes.len(), kept.chosen("catalogue")), (2, Some("501")), "{junk}");
+    }
     // New nodes without the chosen one: none chosen.
     st.apply(&decl, &json!({"items": {"catalogue": {"nodes": [{"id": "env"}]}}}));
     assert_eq!(st.chosen("catalogue"), None);
