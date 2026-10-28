@@ -8,7 +8,7 @@
 //! other hostile input before it is kept. Nothing here knows about the user interface: the
 //! engine keeps a [`PanelState`] per plugin in its session, and the front end draws it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -126,7 +126,7 @@ impl PanelDecl {
         if self.items.is_empty() || self.items.len() > MAX_ITEMS {
             return Err(format!("plugin.json: the panel needs 1 to {MAX_ITEMS} items"));
         }
-        let mut ids = std::collections::HashSet::new();
+        let mut ids = HashSet::new();
         for item in &self.items {
             let kind = item.kind.as_str();
             if !KINDS.contains(&kind) {
@@ -235,7 +235,7 @@ pub struct TreeNode {
 /// (counted down) and [`MAX_TREE_DEPTH`] deep below `depth`. A node without an id, or with one
 /// taken already or too long, is left out with its children; a label defaults to the id (when
 /// missing or blank), and is kept to one line (a row of the tree), control characters as spaces.
-fn tree_nodes(v: &[Value], depth: usize, left: &mut usize, seen: &mut std::collections::HashSet<String>) -> Vec<TreeNode> {
+fn tree_nodes(v: &[Value], depth: usize, left: &mut usize, seen: &mut HashSet<String>) -> Vec<TreeNode> {
     let mut nodes = Vec::new();
     for n in v {
         if *left == 0 {

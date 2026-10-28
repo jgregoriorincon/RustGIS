@@ -26,6 +26,9 @@ pub struct State {
     /// Each tree's open nodes, and what its search box holds, by widget id.
     open: HashMap<String, HashSet<String>>,
     search: HashMap<String, String>,
+    /// The chosen node each tree last showed: one chosen since (by the plugin or a script) opens
+    /// the branches above it, once, so it shows and they can still be closed.
+    revealed: HashMap<String, String>,
 }
 
 /// The panel's title (its tab), in the interface language.
@@ -295,6 +298,22 @@ fn fold(s: &str) -> String {
     s.to_lowercase().nfd().filter(|c| !is_combining_mark(*c)).collect()
 }
 
+/// The ids of the branches above node `id` in `nodes`, the top one first; false when it isn't
+/// among them.
+fn ancestors<'a>(nodes: &'a [TreeNode], id: &str, out: &mut Vec<&'a str>) -> bool {
+    for n in nodes {
+        if n.id == id {
+            return true;
+        }
+        out.push(&n.id);
+        if ancestors(&n.children, id, out) {
+            return true;
+        }
+        out.pop();
+    }
+    false
+}
+
 /// Whether `label` holds every word of a search (folded as [`fold`] folds them).
 fn holds_words(label: &str, words: &[String]) -> bool {
     let label = fold(label);
@@ -357,6 +376,16 @@ fn tree(app: &mut RustGisApp, ui: &mut Ui, pid: &str, item: &PanelItemDecl, stat
     };
     words.sort_unstable();
     words.dedup();
+    let chosen = state.chosen(id);
+    if let Some(c) = chosen
+        && app.ui.plugin_panel.revealed.get(id).map(String::as_str) != Some(c)
+    {
+        let mut above = Vec::new();
+        if ancestors(&st.nodes, c, &mut above) {
+            app.ui.plugin_panel.open.entry(id.to_string()).or_default().extend(above.into_iter().map(String::from));
+        }
+        app.ui.plugin_panel.revealed.insert(id.to_string(), c.to_string());
+    }
     let none = HashSet::new();
     let open = app.ui.plugin_panel.open.get(id).unwrap_or(&none);
     let mut rows = Vec::new();
@@ -366,7 +395,6 @@ fn tree(app: &mut RustGisApp, ui: &mut Ui, pid: &str, item: &PanelItemDecl, stat
         ui.label(RichText::new(empty).size(12.5).color(t.text_dim));
         return;
     }
-    let chosen = state.chosen(id);
     let (mut toggle, mut pick) = (None, None);
     egui::ScrollArea::vertical().id_salt(("plugin-tree", pid, id)).max_height(320.0).auto_shrink([false, true]).show_rows(
         ui,
@@ -479,6 +507,12 @@ mod tests {
         assert_eq!(shown(&nested, "cultura", &[]), ["cul/*", "  live"]);
         assert!(shown(&tree, "zzz", &["env"]).is_empty());
         assert_eq!(fold("Ñandú Çà Åland İzmir"), "nandu ca aland izmir");
+        // A node chosen elsewhere opens the branches above it.
+        let mut above = Vec::new();
+        assert!(ancestors(&tree, "601", &mut above));
+        assert_eq!(above, ["env", "trees"]);
+        assert_eq!(shown(&tree, "", &above), ["env/", "  trees/", "    601", "  water", "cul", "arts"]);
+        assert!(!ancestors(&tree, "nope", &mut Vec::new()));
         // Decomposed accents (a letter, then its mark) fold as composed ones do.
         let decomposed = vec![node("601", "A\u{301}rboles urbanos", vec![])];
         assert_eq!(shown(&decomposed, "arbol", &[]), ["601"]);
