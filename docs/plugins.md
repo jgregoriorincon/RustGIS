@@ -334,9 +334,10 @@ button, a script or the command line):
 ```
 
 `values` has each checkbox (`true` or `false`), slider (a whole number) and tree (the chosen
-node's id, or `null`), and `changed` the ones this call set: the widget the user just moved. A widget's command is run with
-`{"panel": {"release": 196}}` as its parameters, which sets the values before the call and is
-taken out of the request's `params`, so a script or `rustgis-cli` can do the same:
+node's id, or `null`), and `changed` the ones this call set: the widget the user just moved. A
+widget's command is run with `{"panel": {"release": 196}}` as its parameters, which sets the
+values before the call and is taken out of the request's `params`, so a script or `rustgis-cli`
+can do the same:
 
 ```sh
 rustgis-cli run --sample --cmd 'plugin:historical-imagery/go-to-release={"panel": {"release": 40}}'

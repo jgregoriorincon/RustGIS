@@ -666,13 +666,15 @@ fn hostile_panel_trees_are_tamed() {
         {"label": "no id"}, {"id": ""}, {"id": "x".repeat(MAX_TREE_ID + 1)}, {"id": 7},
         {"id": "a", "label": "y".repeat(MAX_STATE_LABEL * 3), "count": -1},
         {"id": "two-lines", "label": "Ambiente\nAgua"},
+        {"id": "blank", "label": "  "},
         {"id": "b", "children": [{"id": "a"}, {"id": "c", "children": "junk"}]},
     ]));
-    assert_eq!(got.iter().map(|n| n.id.as_str()).collect::<Vec<_>>(), ["a", "two-lines", "b"]);
+    assert_eq!(got.iter().map(|n| n.id.as_str()).collect::<Vec<_>>(), ["a", "two-lines", "blank", "b"]);
     assert_eq!(got[1].label, "Ambiente Agua", "a label is one line");
+    assert_eq!(got[2].label, "blank", "a blank label is the id");
     assert_eq!(got[0].label.chars().count(), MAX_STATE_LABEL);
     assert_eq!(got[0].count, None, "a count is a whole number from 0");
-    assert_eq!(got[2].children.iter().map(|n| n.id.as_str()).collect::<Vec<_>>(), ["c"], "an id taken already is left out");
+    assert_eq!(got[3].children.iter().map(|n| n.id.as_str()).collect::<Vec<_>>(), ["c"], "an id taken already is left out");
     for junk in [Value::Null, json!(5), json!("nodes"), json!({"id": "a"}), json!([1, null, "a", [[]]])] {
         assert!(nodes(junk.clone()).is_empty(), "{junk}");
     }

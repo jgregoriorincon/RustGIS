@@ -334,7 +334,8 @@ fn tree_rows<'a>(nodes: &'a [TreeNode], depth: usize, words: &[String], open: &H
 
 /// A tree: a row per node, a branch's children indented under it while it is open. A click
 /// chooses a node (running the widget's command); the triangle, or a double click, opens or
-/// closes a branch. With `search`, a box above it keeps the nodes whose label holds the words
+/// closes a branch (a click on the triangle never chooses it; the first click of a double click
+/// does, as a file browser's). With `search`, a box above it keeps the nodes whose label holds the words
 /// typed, with the branches above them held open (a branch found opens and closes as ever).
 fn tree(app: &mut RustGisApp, ui: &mut Ui, pid: &str, item: &PanelItemDecl, state: &PanelState, tr: &dyn Fn(&str) -> String, t: &Tokens) {
     let id = item.key();
@@ -407,7 +408,7 @@ fn tree(app: &mut RustGisApp, ui: &mut Ui, pid: &str, item: &PanelItemDecl, stat
                 let on_arrow = resp.interact_pointer_pos().is_some_and(|p| arrow.contains(p));
                 if branch && !r.held && (resp.double_clicked() || (resp.clicked() && on_arrow)) {
                     toggle = Some(r.node.id.clone());
-                } else if resp.clicked() && !here {
+                } else if resp.clicked() && !here && !(branch && on_arrow) {
                     pick = Some(r.node.id.clone());
                 }
             }
@@ -421,5 +422,49 @@ fn tree(app: &mut RustGisApp, ui: &mut Ui, pid: &str, item: &PanelItemDecl, stat
     }
     if let Some(n) = pick {
         send(app, pid, item, json!(n));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(id: &str, label: &str, children: Vec<TreeNode>) -> TreeNode {
+        TreeNode { id: id.into(), label: label.into(), count: None, children }
+    }
+
+    /// The rows shown for `query` with `open` branches: each id indented by its depth, `/` when
+    /// its children show, `*` when a search holds it open.
+    fn shown(nodes: &[TreeNode], query: &str, open: &[&str]) -> Vec<String> {
+        let words: Vec<String> = fold(query).split_whitespace().map(String::from).collect();
+        let open: HashSet<String> = open.iter().map(|s| s.to_string()).collect();
+        let mut rows = Vec::new();
+        tree_rows(nodes, 0, &words, &open, &mut rows);
+        rows.iter()
+            .map(|r| format!("{}{}{}{}", "  ".repeat(r.depth), r.node.id, if r.open { "/" } else { "" }, if r.held { "*" } else { "" }))
+            .collect()
+    }
+
+    /// A tree shows its open branches' children; a search keeps what matches every word (case and
+    /// accents aside) with the branches above it held open, and a branch found opens as ever.
+    #[test]
+    fn tree_rows_follow_open_branches_and_searches() {
+        let tree = vec![
+            node(
+                "env",
+                "Ambiente",
+                vec![node("trees", "Arborización", vec![node("601", "Árboles urbanos", vec![])]), node("water", "Agua", vec![])],
+            ),
+            node("cul", "Cultura", vec![node("c1", "Teatro", vec![])]),
+        ];
+        assert_eq!(shown(&tree, "", &[]), ["env", "cul"]);
+        assert_eq!(shown(&tree, "", &["env"]), ["env/", "  trees", "  water", "cul"]);
+        assert_eq!(shown(&tree, "", &["trees"]), ["env", "cul"], "an open branch under a closed one stays hidden");
+        assert_eq!(shown(&tree, "arbol", &[]), ["env/*", "  trees/*", "    601"]);
+        assert_eq!(shown(&tree, "ÁRBOLES urb", &[]), ["env/*", "  trees/*", "    601"], "every word, case and accents aside");
+        assert_eq!(shown(&tree, "cultura", &[]), ["cul"], "a branch found shows as it is");
+        assert_eq!(shown(&tree, "cultura", &["cul"]), ["cul/", "  c1"], "and opens as ever");
+        assert!(shown(&tree, "zzz", &["env"]).is_empty());
+        assert_eq!(fold("Ñandú Çà"), "nandu ca");
     }
 }
