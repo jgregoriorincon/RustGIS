@@ -2295,12 +2295,25 @@ fn raise_labels(map: &Map, view: &View, candidates: &mut [Candidate]) {
     let flat = map.flat();
     let cam = view.camera;
     let (w, h) = (view.width, view.height);
-    for Candidate { label: l, key: (id, row, _, _), alternatives, .. } in candidates.iter_mut() {
+    // Each extruded layer's rows by feature id, the label keys naming features by id (#1046).
+    let mut rows: std::collections::HashMap<u32, std::collections::HashMap<usize, usize>> = std::collections::HashMap::new();
+    for Candidate { label: l, key: (id, fid, _, _), alternatives, .. } in candidates.iter_mut() {
         let Some(layer) = map.layer(*id).filter(|l| l.geometry_type() == GeometryType::Polygon) else { continue };
         let Some(x) = &layer.extrusion else { continue };
+        let features = &layer.dataset.features;
+        // Mostly one past its row (as datasets number them), else looked up; one not among them,
+        // as a streamed layer's, rises by the height no field gives.
+        let row = [fid.wrapping_sub(1), *fid]
+            .into_iter()
+            .find(|&r| features.get(r).is_some_and(|f| f.id as usize == *fid))
+            .or_else(|| {
+                let by_id = rows.entry(*id).or_insert_with(|| features.iter().enumerate().map(|(r, f)| (f.id as usize, r)).collect());
+                by_id.get(fid).copied()
+            })
+            .unwrap_or(usize::MAX);
         let Some(m) = cam.try_to_map(f64::from(l.x), f64::from(l.y), w, h) else { continue };
         // At the label's place (Web Mercator stretches the ground toward the poles).
-        let up = (effects::extrusion_metres(&layer.dataset, x, *row)
+        let up = (effects::extrusion_metres(&layer.dataset, x, row)
             / (flat.ground_per_unit(m) * map.body().ratio()).max(1e-9)
             / cam.res.max(1e-9))
         .clamp(0.0, 1e7);
@@ -3282,7 +3295,9 @@ fn render_frame(map: &mut Map, view: &View, full_res_rasters: bool, backend: Bac
             let layer: &rustgis_map::Layer = layer;
             // Its symbol by expression, compiled once for the drawing (none: the layer's own).
             let styler = layer.styler(Some(scale));
-            let label_row = |row: usize| if complete_source { layer.dataset.features.get(row).map_or(row, |f| f.id as usize) } else { row };
+            // A label is named by its feature's id, not its row: a lock holds through edits that
+            // move rows (#1046).
+            let label_id = |row: usize| layer.dataset.features.get(row).map_or(row, |f| f.id as usize);
             let (labels, selection, ds_ptr) = (&layer.labels, &layer.selection, &layer.dataset);
             // The globe draws the lon/lat geometry itself; the flat map its Web Mercator copy.
             let geoms: Vec<Option<&Geometry>> = if globe.is_some() {
@@ -3635,7 +3650,7 @@ fn render_frame(map: &mut Map, view: &View, full_res_rasters: bool, backend: Bac
                     for (ci, class) in classes.classes_of(ds_ptr, row) {
                         // Locked, only the labels placed then: one class's, not every class's (and
                         // along a line, only its repeats placed then, below).
-                        if locked_classes.as_ref().is_some_and(|k| !k.contains(&(lid, label_row(row), ci))) {
+                        if locked_classes.as_ref().is_some_and(|k| !k.contains(&(lid, label_id(row), ci))) {
                             continue;
                         }
                         if point.is_none() && !along_line(class.placement, g) {
@@ -3718,7 +3733,7 @@ fn render_frame(map: &mut Map, view: &View, full_res_rasters: bool, backend: Bac
                         let pri = (n_layers - li) as f64 * 1e12 - ci as f64 * 1e9 + area;
                         let last = places.len().saturating_sub(1);
                         for (n, (i, mut lx, mut ly, angle, glyphs)) in places.into_iter().enumerate() {
-                            let key = (lid, label_row(row), ci, i);
+                            let key = (lid, label_id(row), ci, i);
                             // Locked, only the repeats placed then.
                             if lock.as_ref().is_some_and(|k| !k.contains_key(&key)) {
                                 continue;
@@ -6395,6 +6410,37 @@ mod tests {
         let shapes = extruded_shapes(&mut m, &south);
         assert_eq!(shapes.len(), 1);
         assert!((shapes[0].height / 200_000.0 - 1.0).abs() < 0.05, "{}", shapes[0].height);
+    }
+
+    /// A label's key names its feature by id (#1046): an extruded feature's label rises by its own
+    /// height, also once its row no longer follows its id.
+    #[test]
+    fn labels_rise_by_their_own_features_height() {
+        let mut m = Map::new("Map");
+        let mut d = Dataset::new("blocks", GeometryType::Polygon, vec![Field::new("h", FieldType::Double)]);
+        let s = 0.1;
+        let ring = vec![Coord::new(-s, -s), Coord::new(s, -s), Coord::new(s, s), Coord::new(-s, s), Coord::new(-s, -s)];
+        for h in [0.0, 100_000.0, 0.0] {
+            d.push(Some(Geometry::Polygon(vec![vec![ring.clone()]])), vec![Value::Float(h)]);
+        }
+        // The first one deleted: the tall one (id 2) is row 0 and the low one (id 3) row 1.
+        d.features.remove(0);
+        let id = m.add_dataset(d);
+        m.layer_mut(id).unwrap().extrusion = Some(rustgis_map::effects::Extrusion {
+            field: Some("h".into()),
+            height: 0.0,
+            factor: 1.0,
+            face_culling: true,
+            lighting: true,
+            shadows: true,
+        });
+        let camera = Camera { center: Coord::new(0.0, 0.0), res: 2000.0, bearing: 0.0, pitch: 60.0 };
+        let view = View { width: 400.0, height: 300.0, pixels_per_point: 1.0, camera, sky: false };
+        let at_centre = |text: &str| PlacedLabel { y: 150.0, ..label(text, 200.0, None, 0.0) };
+        let mut c: Vec<Candidate> = vec![(at_centre("Tall"), 1.0, (id, 2, 0, 0)).into(), (at_centre("Low"), 1.0, (id, 3, 0, 0)).into()];
+        raise_labels(&m, &view, &mut c);
+        assert!(c[0].label.y < 150.0 - 15.0, "the tall one rises onto its roof: {}", c[0].label.y);
+        assert!((c[1].label.y - 150.0).abs() < 1.0, "the low one stays on the ground: {}", c[1].label.y);
     }
 
     /// Extruded features with junk heights or roof indices (hostile data) give finite geometry

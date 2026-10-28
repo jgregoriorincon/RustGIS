@@ -2617,6 +2617,37 @@ fn a_change_to_where_point_labels_go_locks_them_again() {
     assert!(s.map().label_lock.is_none(), "a style putting the labels elsewhere: locked again");
 }
 
+/// A lock names each label by its feature's id, not its row: deleting a feature (the rows after
+/// it move up) neither shows a label left out when the lock was taken nor hides one placed (#1046).
+#[test]
+fn locked_labels_stay_with_their_features_when_rows_move() {
+    use crate::render::View;
+    use rustgis_data::{Dataset, Field, FieldType, Geometry, GeometryType, Value as V};
+    let mut s = world();
+    // Three buoys on one spot of the South Atlantic: only the first one's label fits.
+    let mut d = Dataset::new("Buoys", GeometryType::Point, vec![Field::new("name", FieldType::Text)]);
+    for name in ["Alpha", "Beta", "Gamma"] {
+        d.push(Some(Geometry::Point(rustgis_geom::Coord::new(-20.0, -30.0))), vec![V::Text(name.into())]);
+    }
+    let id = s.map_mut().add_dataset(d);
+    s.run("labels.enable", &json!({"layer": "Buoys", "on": true})).unwrap();
+    let draw = |s: &mut Session| -> Vec<String> {
+        let v = View { width: 800.0, height: 600.0, pixels_per_point: 1.0, camera: s.map().camera, sky: false };
+        let labels = crate::render::render(s.map_mut(), &v).unwrap().labels;
+        labels.into_iter().map(|l| l.text).filter(|t| ["Alpha", "Beta", "Gamma"].contains(&t.as_str())).collect()
+    };
+    assert_eq!(draw(&mut s), ["Alpha"]);
+    s.run("labels.lock", &json!({"on": true})).unwrap();
+    assert_eq!(draw(&mut s), ["Alpha"]);
+    s.map_mut().layer_mut(id).unwrap().selection = vec![0];
+    s.run("edit.delete", &Value::Null).unwrap();
+    assert!(draw(&mut s).is_empty(), "Beta's label wasn't placed when the lock was taken");
+    s.run("labels.lock", &json!({"on": false})).unwrap();
+    assert_eq!(draw(&mut s), ["Beta"], "unlocked, Beta's fits");
+    s.run("labels.lock", &json!({"on": true})).unwrap();
+    assert_eq!(draw(&mut s), ["Beta"], "and is locked in turn");
+}
+
 /// A lock names each label by its class's place in the list: a change to the list (a class added,
 /// moved or removed) locks the labels again on the next frame, a change within a class keeps the
 /// lock (#732).
