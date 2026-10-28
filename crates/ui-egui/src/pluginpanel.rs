@@ -304,16 +304,19 @@ fn fold(s: &str) -> String {
         .collect()
 }
 
+/// Whether `label` holds every word of a search (folded as [`fold`] folds them).
+fn holds_words(label: &str, words: &[String]) -> bool {
+    let label = fold(label);
+    words.iter().all(|w| label.contains(w.as_str()))
+}
+
 /// The rows of `nodes`: with no `words`, each node and, when open, its children; searching, the
 /// nodes whose label holds every word (shown as they are) and the branches above them, open.
 fn tree_rows<'a>(nodes: &'a [TreeNode], depth: usize, words: &[String], open: &HashSet<String>, out: &mut Vec<TreeRow<'a>>) {
     for n in nodes {
         let at = out.len();
         out.push(TreeRow { node: n, depth, open: false, held: false });
-        if words.is_empty() || {
-            let label = fold(&n.label);
-            words.iter().all(|w| label.contains(w.as_str()))
-        } {
+        if words.is_empty() || holds_words(&n.label, words) {
             if open.contains(&n.id) && !n.children.is_empty() {
                 if let Some(r) = out.get_mut(at) {
                     r.open = true;
@@ -406,7 +409,9 @@ fn tree(app: &mut RustGisApp, ui: &mut Ui, pid: &str, item: &PanelItemDecl, stat
                 resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::TreeItem, on, here, &r.node.label));
                 // A branch held open over what a search found doesn't close.
                 let on_arrow = resp.interact_pointer_pos().is_some_and(|p| arrow.contains(p));
-                if branch && !r.held && (resp.double_clicked() || (resp.clicked() && on_arrow)) {
+                // On the triangle each click opens or closes, once for a double click too.
+                let opens = if on_arrow { resp.clicked() && !resp.double_clicked() } else { resp.double_clicked() };
+                if branch && !r.held && opens {
                     toggle = Some(r.node.id.clone());
                 } else if resp.clicked() && !here && !(branch && on_arrow) {
                     pick = Some(r.node.id.clone());
