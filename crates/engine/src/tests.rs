@@ -2310,11 +2310,13 @@ fn label_range_placement_lock_and_convert() {
     count(&mut s);
     assert!(s.map().label_lock.is_none());
     // Convert makes an annotation layer and turns the source's labels off; its labels stay on
-    // their points, even when the source's went round them (#1011).
+    // their points, even when the source's classes had the other places on (#1011: refused for
+    // polygons by labels.placement, but a project file may have it).
     s.run("labels.class.add", &json!({"layer": "Countries", "name": "Big", "where": "pop_est > 100000000"})).unwrap();
-    for class in ["Big", "Default"] {
-        s.run("labels.placement", &json!({"layer": "Countries", "class": class, "otherPositions": true})).unwrap();
-    }
+    let countries = s.map().layer_by_name("Countries").unwrap().id;
+    let labels = &mut s.map_mut().layer_mut(countries).unwrap().labels;
+    labels.default.other_positions = true;
+    labels.classes.iter_mut().for_each(|c| c.other_positions = true);
     let r = s.run("labels.convert", &json!({"layer": "Countries"})).unwrap();
     assert!(r["annotations"].as_u64().unwrap() > 100);
     let a = s.map().layer_by_name("Countries Annotation").unwrap();
@@ -2443,8 +2445,9 @@ fn labels_take_wrapping_and_a_repeat_along_lines() {
 }
 
 /// A point label class tries the other places round its point when told to (#1011): alone it keeps
-/// the position, junk is refused, it undoes, the project keeps it, and turning it off while the
-/// labels are locked locks them again (the places they took no longer stand).
+/// the position, junk is refused and so is turning it on for lines and polygons, it undoes, the
+/// project keeps it, and turning it off while the labels are locked locks them again (the places
+/// they took no longer stand).
 #[test]
 fn labels_take_other_positions_round_points() {
     use crate::render::View;
@@ -2461,6 +2464,11 @@ fn labels_take_other_positions_round_points() {
     assert!(!class(&s).0, "undoes");
     for bad in [json!("yes"), json!(1), Value::Null] {
         assert!(s.run("labels.placement", &json!({"layer": "Cities", "otherPositions": bad})).is_err(), "{bad}");
+    }
+    // Only a point's label goes round it: on is refused for lines and polygons, off taken anywhere.
+    for layer in ["Rivers", "Countries"] {
+        assert!(s.run("labels.placement", &json!({"layer": layer, "otherPositions": true})).is_err(), "{layer}");
+        s.run("labels.placement", &json!({"layer": layer, "otherPositions": false})).unwrap();
     }
     s.run("labels.placement", &json!({"layer": "Cities", "otherPositions": true})).unwrap();
     let text = serde_json::to_string(&s.project).unwrap();

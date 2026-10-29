@@ -155,6 +155,11 @@ pub fn commands() -> Vec<C> {
                 Some(Value::Bool(on)) => Some(*on),
                 Some(_) => return Err("otherPositions must be true or false".into()),
             };
+            // Only a point's label goes round it: on elsewhere it would do nothing (off is taken
+            // anywhere).
+            if others == Some(true) && s.map().layer(s.layer_id(p)?).is_some_and(|l| l.geometry_type() != GeometryType::Point) {
+                return Err("otherPositions is for point layers".into());
+            }
             with_class(s, p, |c| {
                 if let Some(pos) = pos {
                     c.placement = pos;
@@ -172,7 +177,7 @@ pub fn commands() -> Vec<C> {
         })
         .when(need_feature_layer)
         .params(
-            r#"{"layer"?, "class"?: name (none: the Default class, by whatever name it has), "position"?: "auto"|"center"|"above"|"below"|"left"|"right"|"aboveRight"|"aboveLeft"|"belowRight"|"belowLeft"|"parallel" (along a line, straight)|"curved" (along a line, following its bends) (required without offset, repeat or otherPositions), "offset"?: [right, down] points (-200 to 200 each) the label moves from where its position puts it ([0, 0]: none; a label along a line isn't moved), "repeat"?: points (10 to 10000) between a line's labels, spaced out from the one at its middle, at most 32 a line (0 or null: the one at its middle; parallel and curved only), "otherPositions"?: bool (a point's label whose place is taken tries the others round the point, corners first; points only)}"#,
+            r#"{"layer"?, "class"?: name (none: the Default class, by whatever name it has), "position"?: "auto"|"center"|"above"|"below"|"left"|"right"|"aboveRight"|"aboveLeft"|"belowRight"|"belowLeft"|"parallel" (along a line, straight)|"curved" (along a line, following its bends) (required without offset, repeat or otherPositions), "offset"?: [right, down] points (-200 to 200 each) the label moves from where its position puts it ([0, 0]: none; a label along a line isn't moved), "repeat"?: points (10 to 10000) between a line's labels, spaced out from the one at its middle, at most 32 a line (0 or null: the one at its middle; parallel and curved only), "otherPositions"?: bool (a point's label whose place is taken tries the others round the point, corners first; point layers only: true is refused on lines and polygons)}"#,
         ),
         // Label classes: each labels every feature its clause takes, as in ArcGIS Pro; the classes
         // listed first, Default last, are placed first (`Labeling`, #732).
