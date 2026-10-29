@@ -132,8 +132,9 @@ pub fn commands() -> Vec<C> {
         C::new("labels.placement", "Label Placement", "Labeling › Label Placement", |s, p| {
             let pos = match ps(p, "position") {
                 Some(code) => Some(LabelPlacement::from_code(code).ok_or_else(|| format!("unknown placement '{code}'"))?),
-                // A position that isn't a placement name is refused, not dropped for the others.
-                None if p.get("position").is_some() => return Err("position must be a placement name".into()),
+                // A position that isn't a placement name is refused, not dropped for the others (null:
+                // none, as for the other keys).
+                None if p.get("position").is_some_and(|v| !v.is_null()) => return Err("position must be a placement name".into()),
                 None if ["offset", "repeat", "otherPositions"].iter().any(|k| p.get(k).is_some()) => None,
                 None => return Err("position is required (or an offset, a repeat or otherPositions)".into()),
             };
@@ -158,7 +159,7 @@ pub fn commands() -> Vec<C> {
                 Some(_) => return Err("otherPositions must be true or false".into()),
             };
             // Only a point's label goes round it: on elsewhere it would do nothing (off is taken
-            // anywhere). A missing layer passes here and is reported by `with_class`.
+            // anywhere). `layer_id` refuses a missing layer.
             if others == Some(true) && s.map().layer(s.layer_id(p)?).is_some_and(|l| l.geometry_type() != GeometryType::Point) {
                 return Err("otherPositions is for point layers".into());
             }

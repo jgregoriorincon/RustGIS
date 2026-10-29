@@ -2465,11 +2465,14 @@ fn labels_take_other_positions_round_points() {
     for bad in [json!("yes"), json!(1), Value::Null] {
         assert!(s.run("labels.placement", &json!({"layer": "Cities", "otherPositions": bad})).is_err(), "{bad}");
     }
-    // A position that isn't a placement name is refused, not dropped for otherPositions.
-    for bad in [json!(123), json!(true), Value::Null] {
+    // A position that isn't a placement name is refused, not dropped for otherPositions; null is
+    // none.
+    for bad in [json!(123), json!(true), json!(["above"])] {
         assert!(s.run("labels.placement", &json!({"layer": "Cities", "position": bad, "otherPositions": true})).is_err(), "{bad}");
     }
     assert!(!class(&s).0);
+    s.run("labels.placement", &json!({"layer": "Cities", "position": null, "otherPositions": false})).unwrap();
+    assert_eq!(class(&s), (false, placement), "null is no position");
     // Only a point's label goes round it: on is refused for lines and polygons, off taken anywhere.
     for layer in ["Rivers", "Countries"] {
         assert!(s.run("labels.placement", &json!({"layer": layer, "otherPositions": true})).is_err(), "{layer}");
