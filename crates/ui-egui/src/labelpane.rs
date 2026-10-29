@@ -1291,8 +1291,8 @@ mod tests {
         assert_eq!(class(&h).repeat, None);
     }
 
-    /// A point layer's labels can try the other places round their points (#1011); a line layer's
-    /// have no such box.
+    /// A point layer's labels can try the other places round their points (#1011); a line or
+    /// polygon layer's have no such box.
     #[test]
     fn other_positions_are_set_in_the_pane_for_points() {
         use egui::accesskit::Role;
@@ -1314,6 +1314,10 @@ mod tests {
         h.state_mut().session.run("layer.select", &json!({"layer": rivers})).unwrap();
         h.run();
         assert!(h.query_by_role_and_label(Role::CheckBox, BOX).is_none(), "not for lines");
+        let countries = layer_id(h.state(), "Countries");
+        h.state_mut().session.run("layer.select", &json!({"layer": countries})).unwrap();
+        h.run();
+        assert!(h.query_by_role_and_label(Role::CheckBox, BOX).is_none(), "not for polygons");
     }
 
     #[test]

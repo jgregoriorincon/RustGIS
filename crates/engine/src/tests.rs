@@ -2445,9 +2445,9 @@ fn labels_take_wrapping_and_a_repeat_along_lines() {
 }
 
 /// A point label class tries the other places round its point when told to (#1011): alone it keeps
-/// the position, junk is refused and so is turning it on for lines and polygons, it undoes, the
-/// project keeps it, and turning it off while the labels are locked locks them again (the places
-/// they took no longer stand).
+/// the position, junk is refused (in it or in the position) and so is turning it on for lines and
+/// polygons, it undoes, the project keeps it, and turning it on or off while the labels are locked
+/// locks them again (the places they took no longer stand).
 #[test]
 fn labels_take_other_positions_round_points() {
     use crate::render::View;
@@ -2465,6 +2465,11 @@ fn labels_take_other_positions_round_points() {
     for bad in [json!("yes"), json!(1), Value::Null] {
         assert!(s.run("labels.placement", &json!({"layer": "Cities", "otherPositions": bad})).is_err(), "{bad}");
     }
+    // A position that isn't a placement name is refused, not dropped for otherPositions.
+    for bad in [json!(123), json!(true), Value::Null] {
+        assert!(s.run("labels.placement", &json!({"layer": "Cities", "position": bad, "otherPositions": true})).is_err(), "{bad}");
+    }
+    assert!(!class(&s).0);
     // Only a point's label goes round it: on is refused for lines and polygons, off taken anywhere.
     for layer in ["Rivers", "Countries"] {
         assert!(s.run("labels.placement", &json!({"layer": layer, "otherPositions": true})).is_err(), "{layer}");
@@ -2480,6 +2485,11 @@ fn labels_take_other_positions_round_points() {
     assert!(s.map().label_lock.is_some());
     s.run("labels.placement", &json!({"layer": "Cities", "otherPositions": false})).unwrap();
     assert!(s.map().label_lock.is_none(), "turned off: locked again");
+    s.run("labels.lock", &json!({"on": true})).unwrap();
+    crate::render::render(s.map_mut(), &v).unwrap();
+    assert!(s.map().label_lock.is_some());
+    s.run("labels.placement", &json!({"layer": "Cities", "otherPositions": true})).unwrap();
+    assert!(s.map().label_lock.is_none(), "turned on: locked again");
 }
 
 /// A label class takes an offset with its placement and a background with its text symbol; junk
