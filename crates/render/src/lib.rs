@@ -1838,19 +1838,22 @@ fn visit_complete(
 
 /// A label waiting to be placed: the label, its priority and its key, and where else it may go
 /// when its own place is taken (#1011): its `x`, `y` there, tried in order. Whatever moves the
-/// label on its way to the screen moves them too, as it does its icon.
+/// label on its way to the screen moves them too, as it does its icon. `row` is its feature's
+/// row where it was offered: only a hint, checked against the key's feature id before use
+/// (a streamed layer's rows are a chunk's), `usize::MAX` for none.
 #[derive(Clone, Debug)]
 struct Candidate {
     label: PlacedLabel,
     priority: f64,
     key: rustgis_map::LabelKey,
     alternatives: Vec<(f32, f32)>,
+    row: usize,
 }
 
-/// A label with no alternatives.
+/// A label with no alternatives and no row.
 impl From<(PlacedLabel, f64, rustgis_map::LabelKey)> for Candidate {
     fn from((label, priority, key): (PlacedLabel, f64, rustgis_map::LabelKey)) -> Candidate {
-        Candidate { label, priority, key, alternatives: Vec::new() }
+        Candidate { label, priority, key, alternatives: Vec::new(), row: usize::MAX }
     }
 }
 
@@ -2297,15 +2300,14 @@ fn raise_labels(map: &Map, view: &View, candidates: &mut [Candidate]) {
     let (w, h) = (view.width, view.height);
     // Each extruded layer's rows by feature id, the label keys naming features by id (#1046).
     let mut rows: std::collections::HashMap<u32, std::collections::HashMap<usize, usize>> = std::collections::HashMap::new();
-    for Candidate { label: l, key: (id, fid, _, _), alternatives, .. } in candidates.iter_mut() {
+    for Candidate { label: l, key: (id, fid, _, _), alternatives, row: offered, .. } in candidates.iter_mut() {
         let Some(layer) = map.layer(*id).filter(|l| l.geometry_type() == GeometryType::Polygon) else { continue };
         let Some(x) = &layer.extrusion else { continue };
         let features = &layer.dataset.features;
-        // Mostly one past its row (as datasets number them), else looked up; one not among them,
-        // as a streamed layer's, rises by the height no field gives.
-        let row = [fid.wrapping_sub(1), *fid]
-            .into_iter()
-            .find(|&r| features.get(r).is_some_and(|f| f.id as usize == *fid))
+        // The row it was offered from while its feature is there, else looked up by id; one not
+        // among them, as a streamed layer's, rises by the height no field gives.
+        let row = Some(*offered)
+            .filter(|&r| features.get(r).is_some_and(|f| f.id as usize == *fid))
             .or_else(|| {
                 let by_id = rows.entry(*id).or_insert_with(|| features.iter().enumerate().map(|(r, f)| (f.id as usize, r)).collect());
                 by_id.get(fid).copied()
@@ -3782,6 +3784,7 @@ fn render_frame(map: &mut Map, view: &View, full_res_rasters: bool, backend: Bac
                                 priority: pri - i as f64,
                                 key,
                                 alternatives,
+                                row,
                             });
                         }
                     }
@@ -5033,7 +5036,8 @@ mod tests {
     #[test]
     fn labels_try_their_alternatives() {
         let blocker = || Candidate::from((label("Blocker", 100.0, None, 0.0), 9.0, (u32::MAX, 0, 0, 0)));
-        let taken = |alternatives| Candidate { label: label("Taken", 100.0, None, 0.0), priority: 1.0, key: (1, 0, 0, 0), alternatives };
+        let taken =
+            |alternatives| Candidate { label: label("Taken", 100.0, None, 0.0), priority: 1.0, key: (1, 0, 0, 0), alternatives, row: 0 };
         let at = |p: &Placement| p.labels.iter().map(|l| (l.text.clone(), l.x, l.y)).collect::<Vec<_>>();
         // None: left out, as before.
         let p = place_labels(vec![blocker(), taken(Vec::new())], Vec::new(), 400.0, 200.0, false);
@@ -5064,6 +5068,7 @@ mod tests {
             priority: 1.0,
             key: (1, 0, 0, 0),
             alternatives,
+            row: 0,
         };
         let c = tilt_candidate(offer((10.0, 50.0), vec![(10.0, 60.0), (10.0, 150.0), (20.0, 160.0)]), &at).unwrap();
         assert_eq!((c.label.x, c.label.y), (1010.0, 150.0));
@@ -5111,7 +5116,7 @@ mod tests {
                     let (x, y) = ((i % 200) as f32 * 10.0, (i / 200) as f32 * 10.0);
                     let l = PlacedLabel { x, y, ..label("ab", x, None, 0.0) };
                     let alternatives = if others { round.map(|(dx, dy)| (x + dx, y + dy)).to_vec() } else { Vec::new() };
-                    Candidate { label: l, priority: -f64::from(i), key: (u32::MAX, i as usize, 0, 0), alternatives }
+                    Candidate { label: l, priority: -f64::from(i), key: (u32::MAX, i as usize, 0, 0), alternatives, row: usize::MAX }
                 })
                 .collect()
         };
@@ -6437,7 +6442,10 @@ mod tests {
         let camera = Camera { center: Coord::new(0.0, 0.0), res: 2000.0, bearing: 0.0, pitch: 60.0 };
         let view = View { width: 400.0, height: 300.0, pixels_per_point: 1.0, camera, sky: false };
         let at_centre = |text: &str| PlacedLabel { y: 150.0, ..label(text, 200.0, None, 0.0) };
-        let mut c: Vec<Candidate> = vec![(at_centre("Tall"), 1.0, (id, 2, 0, 0)).into(), (at_centre("Low"), 1.0, (id, 3, 0, 0)).into()];
+        // The tall one with no row, looked up by id; the low one offered from row 0 before the
+        // tall one took it there: the row is a hint the id overrules.
+        let low = Candidate { row: 0, ..(at_centre("Low"), 1.0, (id, 3, 0, 0)).into() };
+        let mut c: Vec<Candidate> = vec![(at_centre("Tall"), 1.0, (id, 2, 0, 0)).into(), low];
         raise_labels(&m, &view, &mut c);
         assert!(c[0].label.y < 150.0 - 15.0, "the tall one rises onto its roof: {}", c[0].label.y);
         assert!((c[1].label.y - 150.0).abs() < 1.0, "the low one stays on the ground: {}", c[1].label.y);
