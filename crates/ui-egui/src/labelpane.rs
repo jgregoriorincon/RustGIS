@@ -870,7 +870,7 @@ fn position(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, c: &Class) {
     if l.geometry_type() == rustgis_engine::data::GeometryType::Point {
         ui.add_space(4.0);
         let mut on = c.it.other_positions;
-        let help = tl!("When its place is taken, the label tries the other places round the point, as QGIS's cartographic placement does.");
+        let help = tl!("When its place is taken, the label tries the other places round the point, corners first.");
         if ui.checkbox(&mut on, tl!("Try other places round the point")).on_hover_text(help).changed() {
             run(app, "labels.placement", c.params(json!({"otherPositions": on})));
         }
