@@ -532,6 +532,7 @@ mod tests {
     /// the frame, as the browser does, and the layer lands as the plugin asked for it (#1144).
     #[test]
     fn a_plugin_adds_data_by_address_off_the_frame() {
+        let _turn = crate::fetching::turn();
         use rustgis_engine::plugins;
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -579,6 +580,7 @@ mod tests {
     /// without first reading its header to see whether it could be read in place.
     #[test]
     fn a_scan_by_address_is_downloaded_whole_without_a_probe() {
+        let _turn = crate::fetching::turn();
         use rustgis_engine::plugins;
         use std::io::{Read, Write};
         use std::sync::atomic::{AtomicUsize, Ordering};

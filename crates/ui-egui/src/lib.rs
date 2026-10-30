@@ -4001,6 +4001,31 @@ fn project_file_name(url: &str) -> Option<&str> {
     (rustgis_engine::project::opens_as_project(last) || rustgis_engine::map::geolibre::is_project_file(last)).then_some(last)
 }
 
+/// Tests that fetch through the tile cache take turns: it has one fetcher for the whole process,
+/// and a test that replaces it (`set_fetcher`) would answer another's downloads.
+#[cfg(test)]
+pub(crate) mod fetching {
+    use std::sync::{Mutex, MutexGuard};
+
+    static TURN: Mutex<()> = Mutex::new(());
+
+    /// A test's turn: when it ends, even by failing, addresses are fetched natively again.
+    pub(crate) struct Turn {
+        _held: MutexGuard<'static, ()>,
+    }
+
+    impl Drop for Turn {
+        fn drop(&mut self) {
+            rustgis_engine::render::rustgis_tiles::cache::clear_fetcher();
+        }
+    }
+
+    /// Waits for the tests fetching before this one to end.
+    pub(crate) fn turn() -> Turn {
+        Turn { _held: TURN.lock().unwrap_or_else(|e| e.into_inner()) }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod start_with_tests {
