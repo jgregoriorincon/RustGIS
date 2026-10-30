@@ -441,7 +441,8 @@ frame, saying so in the status bar, and adds the layer when it lands (its own un
 **Home › Add › Add Data › From URL** does. On the desktop that goes for reading a GeoTIFF's,
 FlatGeobuf's or GeoParquet's header too; in the web app a PMTiles archive, a cloud-optimised
 GeoTIFF or a FlatGeobuf or GeoParquet whose header was fetched already is added at once. Up to 16
-downloads wait at a time: a command asking for more fails, and none of its downloads start. Run by
+downloads wait at a time: a request past 16 fails, and if the command then fails too, none of its
+downloads start. Run by
 `rustgis-cli`, a script or a task, the command waits and answers what was added.
 
 `rustgis-cli commands` lists every command id and its parameters.

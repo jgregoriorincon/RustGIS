@@ -8950,7 +8950,7 @@ fn jpeg2000_from_a_web_address() {
 }
 
 /// Where a command may not download itself (the browser), `layer.addUrl` leaves its request for
-/// the front end: once per address, a few at a time (the next is refused, never one silently
+/// the front end: once per request, a few at a time (the next is refused, never one silently
 /// dropped after it was promised), and taken once.
 #[test]
 fn url_requests_wait_for_the_front_end() {
@@ -8959,10 +8959,13 @@ fn url_requests_wait_for_the_front_end() {
     assert_eq!(s.request_url(&p), Ok(json!({"pending": true, "url": "https://x.org/a.geojson"})));
     assert!(s.request_url(&p).is_ok());
     assert!(s.request_url(&json!({"url": "https://x.org/b.geojson"})).is_ok());
+    // The same address read another way is another layer.
+    assert!(s.request_url(&json!({"url": "https://x.org/a.geojson", "name": "A2"})).is_ok());
     let taken = s.take_url_requests();
-    assert_eq!(taken.len(), 2, "the same address once");
+    assert_eq!(taken.len(), 3, "the same request once");
     assert_eq!((taken[0]["name"].as_str(), taken[0]["zoom"].as_bool()), (Some("A"), Some(true)));
     assert_eq!(taken[1]["url"], "https://x.org/b.geojson");
+    assert_eq!((taken[2]["url"].as_str(), taken[2]["name"].as_str()), (Some("https://x.org/a.geojson"), Some("A2")));
     assert!(s.take_url_requests().is_empty());
     for i in 0..16 {
         assert!(s.request_url(&json!({"url": format!("https://x.org/{i}")})).is_ok(), "{i}");

@@ -2436,7 +2436,7 @@ impl RustGisApp {
                 let tiff = rustgis_engine::cmd::layer::is_tiff_url(url);
                 // A scan (`"as"`, a plugin's or a script's) keeps only the pixels: downloaded
                 // whole.
-                let scan = !matches!(p.get("as"), None | Some(Value::Null));
+                let scan = p.get("as").and_then(Value::as_str) == Some("scan");
                 let unnamed = !remote
                     && !tiff
                     && rustgis_engine::cmd::layer::is_unnamed_url(url)
