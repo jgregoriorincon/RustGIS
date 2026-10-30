@@ -1729,7 +1729,15 @@ impl RustGisApp {
         // of another, so it ends when the open layout changes (or layouts come and go).
         let open_layout = |app: &Self| (app.session.active_layout, app.session.project.layouts.len());
         let layout_before = open_layout(self);
-        let mut r = if id.starts_with("ui.") { self.run_ui(id, &params) } else { self.session.run(id, &params) };
+        // A plugin's command that adds data by address doesn't freeze the app: the download is
+        // left for the frame loop (`ui.addUrl`), as in the browser.
+        let mut r = if id.starts_with("ui.") {
+            self.run_ui(id, &params)
+        } else if id.starts_with(rustgis_engine::plugins::PREFIX) {
+            self.session.run_leaving_downloads(id, &params)
+        } else {
+            self.session.run(id, &params)
+        };
         r = self.deliver_gp_files(r);
         if r.is_ok() && id == "tool.set" {
             self.map.cancel_sketch();
@@ -2426,12 +2434,14 @@ impl RustGisApp {
                 // as before when it doesn't answer as one.
                 let remote = rustgis_engine::data::source::is_remote_name(url);
                 let tiff = rustgis_engine::cmd::layer::is_tiff_url(url);
+                // A scan (`"as"`, a plugin's or a script's) keeps only the pixels: downloaded
+                // whole.
+                let scan = !matches!(p.get("as"), None | Some(Value::Null));
                 let unnamed = !remote
                     && !tiff
                     && rustgis_engine::cmd::layer::is_unnamed_url(url)
-                    && matches!(p.get("as"), None | Some(Value::Null))
                     && ["service", "coverage"].iter().all(|k| p.get(*k).and_then(Value::as_bool) != Some(true));
-                if (remote || tiff || unnamed) && p.get("whole").and_then(Value::as_bool) != Some(true) {
+                if (remote || tiff || unnamed) && !scan && p.get("whole").and_then(Value::as_bool) != Some(true) {
                     let slot: Slot<Result<bool, String>> = Slot::default();
                     let land = slot.clone();
                     if remote {
@@ -2483,6 +2493,13 @@ impl RustGisApp {
                 let mut q = json!({});
                 for k in ["name", "layer", "crs"] {
                     if let Some(v) = p.get(k).filter(|v| v.as_str().is_some_and(|s| !s.trim().is_empty())) {
+                        q[k] = v.clone();
+                    }
+                }
+                // How the bytes are read, as `layer.addData` takes it (a command asking by
+                // address, such as a plugin's: the dialog gives none of these).
+                for k in ["x", "y", "wkt", "delimiter", "paperSpace", "stream", "as"] {
+                    if let Some(v) = p.get(k).filter(|v| !v.is_null()) {
                         q[k] = v.clone();
                     }
                 }
