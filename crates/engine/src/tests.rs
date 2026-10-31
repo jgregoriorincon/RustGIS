@@ -770,6 +770,76 @@ fn a_point_takes_stacked_marks_and_turns_by_a_field() {
 }
 
 #[test]
+fn a_symbol_is_set_by_expressions() {
+    let mut s = world();
+    let r = s
+        .run("layer.symbolBy", &json!({"layer": "Cities", "size": "scale_linear(pop_max, 0, 2e7, 4, 20)", "fill": "if(pop_max > 1e7, '#ff0000', NULL)", "angle": "45"}))
+        .unwrap();
+    assert_eq!(r["angle"], "45");
+    let l = s.map().layer_by_name("Cities").unwrap();
+    let fi = l.dataset.field_index("pop_max").unwrap();
+    let big = (0..l.dataset.features.len()).find(|r| l.dataset.value(*r, fi).as_f64().is_some_and(|v| v > 1e7)).unwrap();
+    let st = l.styler(None);
+    assert_eq!(st.symbol(big).fill, rustgis_map::Rgba::new(255, 0, 0, 255));
+    assert!(st.symbol(big).size > 4.0);
+    assert_eq!(st.marker_turn(big), 45.0);
+    // Drawn in an export.
+    let dir = std::env::temp_dir().join(format!("rustgis-symbol-by-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    s.run("share.exportMap", &json!({"path": dir.join("map.png").display().to_string(), "width": 320, "height": 200})).unwrap();
+    std::fs::remove_dir_all(&dir).ok();
+    let depth = s.undo_depth();
+    for (bad, says) in [
+        (json!({"layer": "Cities", "size": "nosuch + 1"}), "size: "),
+        (json!({"layer": "Cities", "fill": "'red' ||"}), "fill: "),
+        (json!({"layer": "Cities", "stroke": 3}), "stroke is an expression"),
+        (json!({"layer": "Rivers", "angle": "10"}), "angle works on point layers"),
+        (json!({"layer": "Rivers", "size": "4"}), "size works on point layers"),
+    ] {
+        let err = s.run("layer.symbolBy", &bad).unwrap_err();
+        assert!(err.contains(says), "{bad}: {err}");
+    }
+    assert_eq!(s.undo_depth(), depth);
+    // A line's width by expression; the Cities keep theirs.
+    s.run("layer.symbolBy", &json!({"layer": "Rivers", "strokeWidth": "2.5"})).unwrap();
+    assert_eq!(s.map().layer_by_name("Cities").unwrap().symbol_by.angle.as_deref(), Some("45"));
+    // A key left out is kept; null removes one, and undo brings it back.
+    s.run("layer.symbolBy", &json!({"layer": "Cities", "angle": null, "fill": ""})).unwrap();
+    let by = &s.map().layer_by_name("Cities").unwrap().symbol_by;
+    assert!(by.size.is_some() && by.fill.is_none() && by.angle.is_none());
+    s.undo();
+    assert_eq!(s.map().layer_by_name("Cities").unwrap().symbol_by.angle.as_deref(), Some("45"));
+}
+
+#[test]
+fn a_qgis_styles_data_defined_settings_are_kept_where_they_read() {
+    let mut s = world();
+    // Size by a field Cities has; fill by a QGIS function RustGIS lacks; outline by a field it hasn't.
+    let dd = |name: &str, expr: &str| {
+        format!(
+            r#"<Option type="Map" name="{name}"><Option value="true" type="bool" name="active"/><Option value="{expr}" type="QString" name="expression"/><Option value="3" type="int" name="type"/></Option>"#
+        )
+    };
+    let qml = format!(
+        r#"<qgis version="3.40.0"><renderer-v2 type="singleSymbol"><symbols><symbol type="marker" name="0" alpha="1">
+        <layer class="SimpleMarker" enabled="1"><Option type="Map"><Option name="name" value="circle"/><Option name="size_unit" value="Pixel"/></Option>
+        <data_defined_properties><Option type="Map"><Option type="Map" name="properties">{}{}{}</Option></Option></data_defined_properties></layer>
+        </symbol></symbols></renderer-v2></qgis>"#,
+        dd("size", "&quot;pop_max&quot; / 1e6"),
+        dd("fillColor", "set_color_part(@symbol_color, 'value', 40)"),
+        dd("outlineColor", "&quot;nosuch&quot;"),
+    );
+    let out = s.run("style.importQgis", &json!({"layer": "Cities", "text": qml})).unwrap();
+    let by = &s.map().layer_by_name("Cities").unwrap().symbol_by;
+    assert_eq!((by.size.as_deref(), &by.fill, &by.stroke), (Some(r#""pop_max" / 1e6"#), &None, &None), "{by:?}");
+    let notes = serde_json::to_string(&out["notes"]).unwrap();
+    assert!(
+        notes.contains("data-defined symbol fill colour `set_color_part") && notes.contains("outline colour `\\\"nosuch\\\"`"),
+        "{notes}"
+    );
+}
+
+#[test]
 fn a_stroke_is_dashed_by_command() {
     let mut s = world();
     let stroke = |dash: Value| json!({"layer": "Rivers", "strokes": [{"color": "#000000", "width": 2, "dash": dash}]});
@@ -9302,6 +9372,84 @@ fn an_arcgis_token_in_a_service_address_reaches_its_layers() {
     let wms = "https://wms914.example.org/rest/services/wms?token=keep-it";
     let kept = crate::cmd::service::without_token(&json!({"url": wms, "type": "wms"})).unwrap();
     assert!(kept.is_none() && arcgis_auth::authorization(wms).is_none());
+}
+
+/// A layer its service draws on request (#1162): one picture of the view when added from its
+/// service, tiles of 256, 512 or 1024 pixels when asked; a project saved before keeps its tiles;
+/// tiles cut from a tile set refuse both.
+#[test]
+fn wms_layers_draw_as_one_picture_or_tiles_of_a_size() {
+    const WMS: &str = r#"<WMS_Capabilities version="1.3.0" xmlns="http://www.opengis.net/wms" xmlns:xlink="http://www.w3.org/1999/xlink">
+<Service><Title>Test WMS</Title></Service>
+<Capability><Request><GetMap><Format>image/png</Format><DCPType><HTTP><Get><OnlineResource xlink:href="https://maps.example.com/wms?"/></Get></HTTP></DCPType></GetMap></Request>
+<Layer><CRS>EPSG:3857</CRS><CRS>EPSG:4326</CRS><Layer><Name>roads</Name><Title>Roads</Title></Layer></Layer></Capability></WMS_Capabilities>"#;
+    let mut s = Session::new(Project::default());
+    s.run("service.add", &json!({"url": "https://maps.example.com/wms", "layer": "roads", "text": WMS})).unwrap();
+    let roads = |s: &Session| s.map().tiles.iter().find(|t| t.name == "Roads").cloned().unwrap();
+    assert!(roads(&s).single_image, "one picture of the view, from its service");
+    // Offered in another system too: drawn in Web Mercator as it comes, its other systems kept
+    // for maps in them (as most services are).
+    assert!(roads(&s).url.contains("#rustgis-warp=") && roads(&s).sized_tiles(), "{}", roads(&s).url);
+    let listed = s.run("map.tiles", &json!({})).unwrap();
+    assert_eq!((listed[0]["singleImage"].clone(), listed[0]["tileSize"].clone()), (json!(true), json!(256)));
+    // Tiles of 1024 pixels: asked for that size.
+    s.run("map.setTiles", &json!({"name": "Roads", "singleImage": false, "tileSize": 1024.0})).unwrap();
+    let t = roads(&s);
+    assert!(!t.single_image && t.tile_size == 1024);
+    assert!(t.url.contains("&WIDTH=1024&HEIGHT=1024&") && t.url.contains("#rustgis-warp="), "{}", t.url);
+    // Its pictures in another system take any size still.
+    let base = t.url.split('#').next().unwrap();
+    assert!(rustgis_data::ogc::warp::Warp::map_template(base).contains("BBOX={nbbox}&WIDTH={nw}&HEIGHT={nh}"));
+    // Kept with the project, and undone.
+    let saved: rustgis_map::TileLayer = serde_json::from_value(serde_json::to_value(&t).unwrap()).unwrap();
+    assert_eq!((saved.single_image, saved.tile_size), (false, 1024));
+    assert!(s.undo());
+    let t = roads(&s);
+    assert!(t.single_image && t.tile_size == 256 && t.url.contains("&WIDTH=256&HEIGHT=256&"));
+    // Junk refused, nothing changed.
+    for bad in
+        [json!({"name": "Roads", "tileSize": 300}), json!({"name": "Roads", "tileSize": "big"}), json!({"name": "Roads", "tileSize": 2048})]
+    {
+        assert!(s.run("map.setTiles", &bad).is_err(), "{bad}");
+    }
+    assert_eq!(roads(&s).tile_size, 256);
+    // A project saved before: tiles, as then.
+    let mut old = serde_json::to_value(roads(&s)).unwrap();
+    old.as_object_mut().unwrap().remove("singleImage");
+    let old: rustgis_map::TileLayer = serde_json::from_value(old).unwrap();
+    assert!(!old.single_image);
+    // Tiles cut from a tile set are neither.
+    s.run("map.addTiles", &json!({"url": "https://tile.example.org/{z}/{x}/{y}.png", "name": "XYZ", "overlay": true})).unwrap();
+    let e = s.run("map.setTiles", &json!({"name": "XYZ", "singleImage": true})).unwrap_err();
+    assert!(e.contains("draws on request"), "{e}");
+    assert!(s.run("map.setTiles", &json!({"name": "XYZ", "tileSize": 1024})).is_err());
+    assert!(s.run("map.addTiles", &json!({"url": "https://tile.example.org/{z}/{x}/{y}.png", "singleImage": true})).is_err());
+    // Nor is an address by its box with no size to write (a generic template): asked for at its
+    // service's default size, it stays in its own tiles.
+    let bare = "https://maps.example.org/render?bbox={bbox-epsg-3857}&format=png";
+    assert!(!rustgis_map::tiles::drawn_on_request(bare));
+    assert!(s.run("map.addTiles", &json!({"url": bare, "name": "Bare", "overlay": true, "singleImage": true})).is_err());
+    s.run("map.addTiles", &json!({"url": bare, "name": "Bare", "overlay": true})).unwrap();
+    assert!(s.run("map.setTiles", &json!({"name": "Bare", "tileSize": 1024})).is_err());
+    assert!(rustgis_map::tiles::drawn_on_request("https://maps.example.org/wms?BBOX={nbbox}&width={nw}&HEIGHT={nh}&f=png"));
+    assert!(rustgis_map::tiles::drawn_on_request("https://maps.example.org/wms?BBOX={bbox-epsg-3857}&WIDTH={width}&HEIGHT={height}"));
+    assert!(!rustgis_map::tiles::drawn_on_request("https://maps.example.org/wms?BBOX={bbox-epsg-3857}&WIDTH={w}&HEIGHT=256"));
+    // Added by its address, a layer drawn on request is one picture too, unless tiles are asked
+    // for; a bare template, and tiles cut from a tile set, are tiles.
+    let wms = "https://m.example.org/wms?SERVICE=WMS&REQUEST=GetMap&LAYERS=a&CRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image%2Fpng";
+    let single = |s: &Session, name: &str| s.map().tiles.iter().find(|t| t.name == name).unwrap().single_image;
+    s.run("map.addTiles", &json!({"url": wms, "name": "ByAddress", "overlay": true})).unwrap();
+    assert!(single(&s, "ByAddress"));
+    s.run("map.addTiles", &json!({"url": wms, "name": "AsTiles", "overlay": true, "singleImage": false})).unwrap();
+    assert!(!single(&s, "AsTiles"));
+    s.run("map.addTiles", &json!({"url": wms.replace("LAYERS=a", "LAYERS=b"), "name": "Sized", "overlay": true, "tileSize": 512})).unwrap();
+    assert!(!single(&s, "Sized"));
+    assert!(!single(&s, "Bare") && !single(&s, "XYZ"));
+    // A map service's export added with a tile size: its size asked for.
+    let export = "https://s.example.org/arcgis/rest/services/x/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&f=image";
+    s.run("map.addTiles", &json!({"url": export, "name": "Export", "overlay": true, "tileSize": 512})).unwrap();
+    let t = s.map().tiles.iter().find(|t| t.name == "Export").unwrap();
+    assert!(t.url.contains("&size=512,512&") && t.tile_size == 512 && !t.single_image, "{}", t.url);
 }
 
 /// A WMS layer added from its service takes its legends (the service's GetLegendGraphic, then
@@ -18642,6 +18790,15 @@ fn legends_leave_layers_out() {
     s.run("layer.rename", &json!({"layer": "Nations", "name": "Countries"})).unwrap();
     s.run("layer.rename", &json!({"layer": "Lakes", "name": "Countries"})).unwrap();
     assert!(left_out(&s, lakes).is_empty(), "the other Countries isn't taken out");
+    // A WMS or WMTS layer is left out by name too, and the name follows it: renamed, removed.
+    let wms = json!({"url": "https://maps.example.org/wms/{bbox-epsg-3857}", "name": "Soils", "overlay": true, "legend": "https://maps.example.org/legend.png"});
+    s.run("map.addTiles", &wms).unwrap();
+    s.run("layout.update", &json!({"element": lakes, "exclude": ["soils"]})).unwrap();
+    assert_eq!(left_out(&s, lakes), ["Soils"]);
+    s.run("map.setTiles", &json!({"name": "Soils", "rename": "Soil map", "move": "bottom"})).unwrap();
+    assert_eq!(left_out(&s, lakes), ["Soil map"]);
+    s.run("map.removeTiles", &json!({"name": "Soil map"})).unwrap();
+    assert!(left_out(&s, lakes).is_empty());
 }
 
 /// A point layer of events, one a month through 2015 (two in March), with their dates as text,

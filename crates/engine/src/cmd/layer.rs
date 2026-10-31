@@ -230,6 +230,9 @@ pub fn commands() -> Vec<C> {
         })
         .when(need_points)
         .params(r#"{"layer"?, "field": numeric field name|null (each point's marker turned by the angle in it, in degrees; null: not turned), "counterclockwise"?: bool (the angles run counterclockwise, as in mathematics; default clockwise, as on a compass)}"#),
+        C::new("layer.symbolBy", "Symbol by Expression", "Style › Drawing", symbol_by)
+            .when(need_feature_layer)
+            .params(r#"{"layer"?, "size"?: expression|null (a point's marker size in points), "fill"?: expression|null (the fill colour: '#RRGGBB', a CSS colour name or 'r,g,b[,a]' as color_rgb gives it), "stroke"?: expression|null (the outline colour, a line's colour), "strokeWidth"?: expression|null (the outline's width in points, a line's width), "angle"?: expression|null (point layers: each marker turned by it, in degrees clockwise, in place of layer.markerRotation's field)} (each expression in the language of queries, per feature, @map_scale the map's scale; a key left out keeps its expression, null or "" removes it; where an expression gives null the symbol's own value is drawn)"#),
         C::new("layer.strokeLevels", "Stroke Levels", "Style › Drawing", |s, p| {
             let on = b(p, "on").ok_or("on is true or false")?;
             let id = s.layer_id(p)?;
@@ -538,6 +541,44 @@ fn need_lines(s: &Session) -> Option<&'static str> {
         Some(_) => Some("this works on line layers"),
         None => Some("select a layer in the Layers pane first"),
     }
+}
+
+/// `layer.symbolBy`: sets (or removes) the expressions a layer's symbol takes per feature, each
+/// checked against its fields first.
+fn symbol_by(s: &mut Session, p: &Value) -> CmdResult {
+    const KEYS: [&str; 5] = ["size", "fill", "stroke", "strokeWidth", "angle"];
+    let id = s.layer_id(p)?;
+    let l = s.map_mut().layer_mut(id).ok_or("no such layer")?;
+    if l.is_raster() || l.graphics {
+        return Err("this works on feature layers".into());
+    }
+    let mut by = l.symbol_by.clone();
+    for key in KEYS {
+        let text = match p.get(key) {
+            None => continue,
+            Some(Value::Null) => None,
+            Some(Value::String(t)) if t.trim().is_empty() => None,
+            Some(Value::String(t)) => Some(t.clone()),
+            Some(_) => return Err(format!("{key} is an expression's text, or null for none")),
+        };
+        if let Some(t) = &text {
+            if matches!(key, "size" | "angle") && l.geometry_type() != GeometryType::Point {
+                return Err(format!("{key} works on point layers"));
+            }
+            rustgis_data::query::parse(t, &l.dataset).map_err(|e| format!("{key}: {e}"))?;
+        }
+        let slot = match key {
+            "size" => &mut by.size,
+            "fill" => &mut by.fill,
+            "stroke" => &mut by.stroke,
+            "strokeWidth" => &mut by.stroke_width,
+            _ => &mut by.angle,
+        };
+        *slot = text;
+    }
+    l.symbol_by = by;
+    let b = &l.symbol_by;
+    Ok(json!({"size": b.size, "fill": b.fill, "stroke": b.stroke, "strokeWidth": b.stroke_width, "angle": b.angle}))
 }
 
 /// `layer.lineStrokes`: sets a line layer's stacked strokes, or one class's own.
@@ -2957,11 +2998,16 @@ fn add_sample(s: &mut Session, p: &Value) -> CmdResult {
 /// isn't left out unasked. Called once the layer is renamed or gone: while another layer still
 /// bears `old` (names may repeat), the legends keep it for that one. Renamed onto the name of
 /// another layer a legend lists, the layer is listed with it rather than taking that one out.
+/// A WMS or WMTS layer's name counts as a layer's: legends list those too.
 pub(crate) fn legends_follow_layer(s: &mut Session, old: &str, new: Option<&str>) {
-    if s.map().layers.iter().any(|l| l.name.eq_ignore_ascii_case(old)) {
+    let named = |s: &Session, n: &str| {
+        let m = s.map();
+        m.layers.iter().map(|l| &l.name).chain(m.tiles.iter().map(|t| &t.name)).filter(|x| x.eq_ignore_ascii_case(n)).count()
+    };
+    if named(s, old) > 0 {
         return;
     }
-    let shared = new.is_some_and(|n| s.map().layers.iter().filter(|l| l.name.eq_ignore_ascii_case(n)).count() > 1);
+    let shared = new.is_some_and(|n| named(s, n) > 1);
     let map = s.map().name.clone();
     for layout in &mut s.project.layouts {
         let frames: Vec<u32> = layout
