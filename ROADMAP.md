@@ -236,8 +236,8 @@ Open questions rather than plans; discuss before building.
   documentation built in.
 - The AI Assistant's skills, subagents and ACP clients; MCP over HTTP, an audited loopback
   relay and a file bridge, which let external AI clients drive the app. Database passwords, S3
-  keys and AI provider keys optionally remembered in the desktop OS keychain, where the ChatGPT
-  sign-in keeps its tokens.
+  keys, AI provider keys and the Earthdata Login token optionally remembered in the desktop OS
+  keychain, where the ChatGPT sign-in keeps its tokens.
 - Sandboxed WebAssembly plugins with a registry at plugins.rustgis.app; process plugins that
   run as programs (with Python environments RustGIS makes), in the background with progress and
   Cancel.
