@@ -49,7 +49,7 @@ to English until the catalogs are updated; see [Languages](i18n.md).
 ### Faster local builds and test runs
 
 All of this is optional and on your side: the repository's profiles stay as they are, and
-`cargo xtask ci` is still the check before a pull request.
+`cargo xtask ci` is still the check before each commit and pull request.
 
 **Less debug information.** Much of a debug build's size and link time is debug information,
 most of it the dependencies'. In your user-level `~/.cargo/config.toml`:
@@ -63,8 +63,8 @@ debug = false
 ```
 
 On Linux, `split-debuginfo = "unpacked"` under `[profile.dev]` also keeps the linker from copying
-what is left of it, and [mold](https://github.com/rui314/mold) links faster still than the `rust-lld` Rust already
-uses on x86-64 Linux:
+what is left of it, and [mold](https://github.com/rui314/mold) links faster still than the
+`rust-lld` Rust already uses on x86-64 Linux. Install mold first (the link fails without it), then:
 
 ```toml
 [target.x86_64-unknown-linux-gnu]
@@ -77,19 +77,20 @@ The settings change every build's fingerprint, so the next build is a full one.
 binaries and examples; a change in `ui-egui` alone means its library twice (plain and for its unit
 tests), fifteen integration test binaries and the examples. While you work, name what you need:
 `cargo test -p rustgis-ui-egui --lib`, `cargo test -p rustgis-engine --test project_save`, or
-`cargo clippy -p <crate> --all-targets` to check without linking.
+`cargo clippy -p rustgis-ui-egui --all-targets` to check without linking.
 
 **cargo-nextest.** [cargo-nextest](https://nexte.st) (`cargo install cargo-nextest --locked`) runs
 the test binaries side by side, each test in its own process, and filters tests by expression:
 
 ```sh
-cargo nextest run --workspace --no-fail-fast -E 'not test(hostile_params_never_panic)'
+cargo nextest run --workspace --no-fail-fast -E 'not (package(rustgis-engine) and test(hostile_params_never_panic))'
 cargo test --workspace --doc   # nextest doesn't run doctests
 ```
 
 The engine's `hostile_params_never_panic`, which runs every command with junk parameters, is by far
-its slowest test; leaving it out while you iterate and running it before you push keeps a run
-short. A test that fails now and then can be retried with `--retries 1`.
+its slowest test; leaving it out while you iterate keeps a run short. Run it before you push, with
+`cargo nextest run -p rustgis-engine -E 'test(hostile_params_never_panic)'` or `cargo xtask ci`.
+A test that fails now and then can be retried with `--retries 1`.
 
 **`opt-level` 0 for UI work.** The workspace crates build at `opt-level = 1`. With
 `CARGO_PROFILE_DEV_OPT_LEVEL=0`, `ui-egui` rebuilds after an edit about five times faster, but the
