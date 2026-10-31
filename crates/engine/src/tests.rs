@@ -2001,6 +2001,7 @@ fn raster_masks_hide_values() {
 /// Shards of `hostile_params_never_panic`: each takes every eighth command, so the parts run side by
 /// side (opengeos/RustGIS#1201).
 const HOSTILE_SHARDS: usize = 8;
+const _: () = assert!(HOSTILE_SHARDS == 8, "add a hostile_params_never_panic_N test for each shard");
 
 #[test]
 fn hostile_params_never_panic_0() {
