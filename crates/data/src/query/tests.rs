@@ -682,7 +682,7 @@ fn catalog_value(text: &str, layers: &[Dataset]) -> Option<Value> {
 fn every_function_has_one_catalog_entry_that_works() {
     let layers = catalog_layers();
     let mut names = std::collections::HashSet::new();
-    for f in Func::ALL {
+    for &f in Func::ALL {
         let s = f.spec();
         assert_eq!(s.func, f);
         assert!(names.insert(s.name), "{} is listed twice", s.name);
@@ -729,7 +729,8 @@ fn every_keyword_is_listed_once_and_read() {
     let clause = "NOT pop IS NULL AND (name LIKE 'p%' OR name ILIKE 'l%') AND pop IN (1, 2100000) \
                   AND pop BETWEEN 1 AND 3000000 AND TRUE AND NOT FALSE \
                   AND CASE WHEN pop > 1 THEN TRUE ELSE FALSE END";
-    let used: Vec<Kw> = Kw::ALL.into_iter().filter(|k| clause.split_whitespace().any(|w| w.trim_matches(['(', ')']) == k.word())).collect();
+    let used: Vec<Kw> =
+        Kw::ALL.iter().copied().filter(|k| clause.split_whitespace().any(|w| w.trim_matches(['(', ')']) == k.word())).collect();
     assert_eq!(used, Kw::ALL, "the clause should use every keyword");
     assert_eq!(select(&clause.to_ascii_lowercase(), &d).unwrap(), vec![0]);
 }

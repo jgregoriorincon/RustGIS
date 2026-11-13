@@ -132,6 +132,24 @@ pub struct Env {
     pub map_scale: Option<f64>,
 }
 
+/// Declares an enum and its `ALL`, every variant in the order declared, from one list, so a
+/// new variant can't be left out of `ALL`.
+macro_rules! listed_enum {
+    ($(#[$meta:meta])* pub enum $name:ident { $($(#[$vmeta:meta])* $variant:ident,)* }) => {
+        $(#[$meta])*
+        pub enum $name {
+            $($(#[$vmeta])* $variant,)*
+        }
+
+        impl $name {
+            /// Every variant, in the order declared.
+            pub const ALL: &'static [$name] = &[$($name::$variant,)*];
+        }
+    };
+}
+
+listed_enum! {
+/// A function of the language. Its catalog entry is [`Func::spec`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Func {
     If,
@@ -169,6 +187,7 @@ pub enum Func {
     Area,
     Perimeter,
     LineLength,
+}
 }
 
 /// Whether `t` is a whole date in a form other than ISO 8601: digits only, five or more
@@ -250,44 +269,6 @@ pub struct FuncSpec {
 }
 
 impl Func {
-    /// Every function, in the order the user guide lists them. Only these can be called.
-    pub const ALL: [Func; 34] = [
-        Func::If,
-        Func::Coalesce,
-        Func::NullIf,
-        Func::Abs,
-        Func::Round,
-        Func::Floor,
-        Func::Ceil,
-        Func::Sqrt,
-        Func::Exp,
-        Func::Ln,
-        Func::Log10,
-        Func::Pi,
-        Func::Min,
-        Func::Max,
-        Func::Clamp,
-        Func::ScaleLinear,
-        Func::ScaleExp,
-        Func::ToString,
-        Func::ToInt,
-        Func::ToReal,
-        Func::Length,
-        Func::Upper,
-        Func::Lower,
-        Func::Trim,
-        Func::Substr,
-        Func::Left,
-        Func::Right,
-        Func::Replace,
-        Func::Concat,
-        Func::ColorRgb,
-        Func::ColorRgba,
-        Func::Area,
-        Func::Perimeter,
-        Func::LineLength,
-    ];
-
     /// Its catalog entry. One arm per function, so a new [`Func`] doesn't compile without its
     /// name, signature, description and example.
     pub const fn spec(self) -> FuncSpec {
@@ -384,7 +365,7 @@ impl Func {
 
 /// Every function of the language, with its catalog entry.
 pub fn functions() -> impl Iterator<Item = FuncSpec> {
-    Func::ALL.into_iter().map(Func::spec)
+    Func::ALL.iter().map(|f| f.spec())
 }
 
 /// A variable's catalog entry. The parser resolves `@…` and `$…` through [`VARS`], so a variable
@@ -416,6 +397,7 @@ pub const VARS: &[VarSpec] = &[
     VarSpec { names: &["$length"], var: Var::Measure(Measure::Length, 1.0), description: "A line's length in metres" },
 ];
 
+listed_enum! {
 /// A keyword of the language. The parser matches keywords only through [`Kw::word`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kw {
@@ -436,28 +418,9 @@ pub enum Kw {
     Else,
     End,
 }
+}
 
 impl Kw {
-    /// Every keyword. Only these are read as keywords.
-    pub const ALL: [Kw; 16] = [
-        Kw::And,
-        Kw::Or,
-        Kw::Not,
-        Kw::Is,
-        Kw::Null,
-        Kw::Like,
-        Kw::Ilike,
-        Kw::In,
-        Kw::Between,
-        Kw::True,
-        Kw::False,
-        Kw::Case,
-        Kw::When,
-        Kw::Then,
-        Kw::Else,
-        Kw::End,
-    ];
-
     /// How it is written (any letter case is read).
     pub const fn word(self) -> &'static str {
         match self {
