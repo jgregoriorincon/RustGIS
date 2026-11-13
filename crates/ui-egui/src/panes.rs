@@ -1,4 +1,4 @@
-//! Docked panes: Layers and Browser on the left; Geoprocessing, Symbology, History and Details
+//! Docked panes: Layers and Browser on the left; Geoprocessing, Symbology, History and the rest
 //! on the right.
 
 use std::collections::HashMap;
@@ -131,7 +131,6 @@ fn right_title(pane: RightPane) -> (&'static str, &'static str) {
         RightPane::Geoprocessing => ("Tools", "ui.pane.geoprocessing"),
         RightPane::Symbology => ("Symbology", "ui.pane.symbology"),
         RightPane::History => ("History", "ui.pane.history"),
-        RightPane::Details => ("Details", "ui.pane.details"),
         RightPane::Editing => ("Editing", "ui.pane.editing"),
         RightPane::Design => ("Data Design", "ui.pane.design"),
         RightPane::Workflows => ("Workflows", "ui.pane.workflows"),
@@ -198,7 +197,6 @@ fn right_pane(app: &mut RustGisApp, ui: &mut Ui, right: RightPane, t: &Tokens) {
             RightPane::Geoprocessing => geoprocessing(app, ui, t),
             RightPane::Symbology => symbology(app, ui, t),
             RightPane::History => history(app, ui, t),
-            RightPane::Details => details(app, ui, t),
             RightPane::Editing => crate::editpanes::editing(app, ui, t),
             RightPane::Design => crate::editpanes::design(app, ui, t),
             RightPane::Workflows => crate::analysispane::workflows(app, ui, t),
@@ -6223,7 +6221,7 @@ fn line_strokes_editor(app: &mut RustGisApp, ui: &mut Ui, l: &rustgis_engine::ma
 }
 
 // ---------------------------------------------------------------------------------------------
-// History and Details
+// History, and what the Source tab shows of a layer
 
 pub(crate) fn history(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
     if crate::sessionlog::tabs(app, ui, t) {
@@ -6340,17 +6338,7 @@ fn save_history_script(app: &mut RustGisApp) {
     }
 }
 
-/// Shows the selected layer's source metadata alongside its internal longitude/latitude extent.
-fn details(app: &mut RustGisApp, ui: &mut Ui, t: &Tokens) {
-    let Some(l) = app.session.active_layer.and_then(|id| app.session.map().layer(id)) else {
-        ui.label(egui::RichText::new(tl!("Select a layer in the Layers pane.")).color(t.text_dim));
-        return;
-    };
-    ui.label(egui::RichText::new(&l.name).font(semibold(14.0)));
-    source_details(ui, l, t);
-}
-
-/// What the Details pane and the Layer Properties pane's Source tab (#1803) show of a layer: its
+/// What the Layer Properties pane's Source tab (#1803), once the Details pane, shows of a layer: its
 /// geometry, counts, source, coordinate system, extent and fields, or a raster's own details.
 pub(crate) fn source_details(ui: &mut Ui, l: &Layer, t: &Tokens) {
     let e = l.extent();

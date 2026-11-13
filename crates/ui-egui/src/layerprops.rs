@@ -1,13 +1,15 @@
 //! The Layer Properties pane (#1803): the selected layer's settings in one place, opened from a
-//! layer's right-click menu (Properties…) or View › Windows › Layer Properties, and on its Query
-//! tab from Data › Definition Query. As the Labeling pane, it keeps no layer settings of its own:
-//! it reads the layer each frame and runs the same commands as the ribbon and the layer's menu, so
-//! every change undoes on its own. Only what it shows is kept: the tab chosen
-//! (`UiState::layer_properties_tab`), and in egui's memory the header's light and a name or query
-//! being typed. A tab per topic shows one part at a time: General, Source, Display and, for a
-//! feature layer, Query and Time. The pane follows the selected layer, as the Symbology and Labeling panes
-//! do; its header (the layer's type and name, also on the pane's tab) lights up for a moment when
-//! the layer changes, so a change made next isn't made on another layer unawares.
+//! layer's right-click menu (Properties…) or View › Windows › Layer Properties; on its Query tab
+//! from Data › Definition Query; on its Source tab from View › Windows › Details and, for a
+//! raster, Data › Raster Information, which once opened a Details pane of their own. As the
+//! Labeling pane, it keeps no layer settings of its own: it reads the layer each frame and runs the
+//! same commands as the ribbon and the layer's menu, so every change undoes on its own. Only what
+//! it shows is kept: the tab chosen (`UiState::layer_properties_tab`), and in egui's memory the
+//! header's light and a name or query being typed. A tab per topic shows one part at a time:
+//! General, Source, Display and, for a feature layer, Query and Time. The pane follows the selected
+//! layer, as the Symbology and Labeling panes do; its header (the layer's type and name, also on
+//! the pane's tab) lights up for a moment when the layer changes, so a change made next isn't made
+//! on another layer unawares.
 
 use egui::{CornerRadius, RichText, Ui, vec2};
 use rustgis_engine::data::GeometryType;
@@ -142,6 +144,12 @@ impl Topic {
     }
 }
 
+/// Whether the pane is in view on its Source tab: what `ui.pane.details` shows, and what lights
+/// the ribbon's Details and Raster Information.
+pub(crate) fn source_in_view(ui: &crate::UiState) -> bool {
+    ui.right == Some(crate::RightPane::LayerProperties) && ui.layer_properties_tab == Topic::Source
+}
+
 /// The tab row, and the tab chosen in it. It is the pane's, not a layer's: choosing another layer
 /// keeps the topic in view. A raster has no Query or Time tab: it shows General, and the tab comes
 /// back with the next feature layer.
@@ -267,8 +275,8 @@ fn name_row(app: &mut RustGisApp, ui: &mut Ui, l: &Layer) {
     }
 }
 
-/// What the Details pane shows of the layer, and the actions on its source: those the layer's
-/// menu has, each where the menu shows it, and Define Projection…, which is here only (#1803).
+/// What the layer is read from (once the Details pane), and the actions on its source: those the
+/// layer's menu has, each where the menu shows it, and Define Projection…, which is here only (#1803).
 fn source(app: &mut RustGisApp, ui: &mut Ui, l: &Layer, t: &Tokens) {
     crate::panes::source_details(ui, l, t);
     ui.add_space(8.0);
@@ -561,6 +569,29 @@ mod tests {
             assert_eq!(app.session.active_layer, Some(raster));
         }
         app.run("ui.pane.layerProperties", json!({"close": true})).unwrap();
+        assert!(!app.ui.right_open.contains(&RightPane::LayerProperties));
+    }
+
+    /// The Details pane is the Source tab now: the ribbon's Details and Raster Information show
+    /// it, and hide it when it is already in view.
+    #[test]
+    fn details_shows_the_source_tab() {
+        let mut app = RustGisApp::with_sample();
+        app.session.active_layer = None;
+        assert!(app.run("ui.pane.details", json!(null)).is_err(), "no layer selected");
+        let cities = layer_id(&app, "Cities");
+        app.session.run("layer.select", &json!({"layer": cities})).unwrap();
+        app.run("ui.pane.layerProperties", json!({"tab": "query"})).unwrap();
+        app.run("ui.pane.details", json!(null)).unwrap();
+        assert!(super::source_in_view(&app.ui), "from another tab, Source is shown");
+        app.run("ui.pane.details", json!(null)).unwrap();
+        assert!(!app.ui.right_open.contains(&RightPane::LayerProperties), "a second press hides it");
+        if let Some(raster) = app.session.map().layers.iter().find(|l| l.is_raster()).map(|l| l.id) {
+            app.session.run("layer.select", &json!({"layer": raster})).unwrap();
+            app.run("ui.pane.details", json!(null)).unwrap();
+            assert!(super::source_in_view(&app.ui), "a raster's information is on Source too");
+        }
+        app.run("ui.pane.details", json!({"close": true})).unwrap();
         assert!(!app.ui.right_open.contains(&RightPane::LayerProperties));
     }
 
