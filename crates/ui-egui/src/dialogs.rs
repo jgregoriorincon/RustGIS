@@ -1969,27 +1969,55 @@ pub(crate) fn buttons(app: &mut RustGisApp, ui: &mut egui::Ui, ok: &str, f: impl
     close
 }
 
+/// Adds `word` to the end of the clause `text`, set apart from what the clause ends with, so a
+/// name typed just before isn't run into it (`nameLIKE`), as the buttons beside a clause do.
+pub(crate) fn add_word(text: &mut String, word: &str) {
+    if !text.is_empty() && !text.ends_with(char::is_whitespace) && !text.ends_with('(') {
+        text.push(' ');
+    }
+    text.push_str(word);
+    // A call left open (`round(`) goes on with its arguments.
+    if !word.ends_with('(') {
+        text.push(' ');
+    }
+}
+
+/// The Functions and Variables menus beside a clause's buttons, adding to the clause `text`. They
+/// list the language's own catalogs, the ones the parser reads, so one added to the language is
+/// listed here with no change. Each is listed as it is written, with what it gives on hover; a
+/// function is added open, unless it takes no arguments (`pi()`).
+pub(crate) fn expr_menus(ui: &mut egui::Ui, text: &mut String) {
+    ui.menu_button(tl!("Functions ▾"), |ui| {
+        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+            for f in rustgis_engine::data::query::functions() {
+                let word = if f.max == 0 { format!("{}()", f.name) } else { format!("{}(", f.name) };
+                let label = egui::RichText::new(f.signature).monospace();
+                if ui.button(label).on_hover_text(tl!(f.description)).clicked() {
+                    add_word(text, &word);
+                    ui.close();
+                }
+            }
+        });
+    });
+    ui.menu_button(tl!("Variables ▾"), |ui| {
+        for v in rustgis_engine::data::query::VARS {
+            let Some(&name) = v.names.first() else { continue };
+            if ui.button(egui::RichText::new(name).monospace()).on_hover_text(tl!(v.description)).clicked() {
+                add_word(text, name);
+                ui.close();
+            }
+        }
+    });
+}
+
 /// Buttons that add one of `fields` (the first 24), an operator, a function or a variable to the
 /// clause `text`, as Select By Attributes and the Layer Properties pane's Query tab offer them.
-/// Each is set apart from what the clause ends with, so a name typed just before isn't run into it
-/// (`nameLIKE`). The functions and variables are the language's own catalogs, the ones the parser
-/// reads, so one added to the language is listed here with no change.
 pub(crate) fn field_chips(ui: &mut egui::Ui, fields: &[rustgis_engine::data::Field], text: &mut String) {
-    let add = |text: &mut String, word: &str| {
-        if !text.is_empty() && !text.ends_with(char::is_whitespace) && !text.ends_with('(') {
-            text.push(' ');
-        }
-        text.push_str(word);
-        // A call left open (`round(`) goes on with its arguments.
-        if !word.ends_with('(') {
-            text.push(' ');
-        }
-    };
     ui.horizontal_wrapped(|ui| {
         ui.label(egui::RichText::new(tl!("Fields:")).small().weak());
         for f in fields.iter().take(24) {
             if ui.small_button(&f.name).clicked() {
-                add(text, &f.name);
+                add_word(text, &f.name);
             }
         }
     });
@@ -1997,32 +2025,10 @@ pub(crate) fn field_chips(ui: &mut egui::Ui, fields: &[rustgis_engine::data::Fie
     ui.horizontal_wrapped(|ui| {
         for op in ["=", "<>", ">", "<", "LIKE", "AND", "OR", "IS NULL"] {
             if ui.small_button(op).clicked() {
-                add(text, op);
+                add_word(text, op);
             }
         }
-        // Each listed as it is written, with what it gives on hover. A function is added open,
-        // unless it takes no arguments (`pi()`).
-        ui.menu_button(tl!("Functions ▾"), |ui| {
-            egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-                for f in rustgis_engine::data::query::functions() {
-                    let word = if f.max == 0 { format!("{}()", f.name) } else { format!("{}(", f.name) };
-                    let label = egui::RichText::new(f.signature).monospace();
-                    if ui.button(label).on_hover_text(tl!(f.description)).clicked() {
-                        add(text, &word);
-                        ui.close();
-                    }
-                }
-            });
-        });
-        ui.menu_button(tl!("Variables ▾"), |ui| {
-            for v in rustgis_engine::data::query::VARS {
-                let Some(&name) = v.names.first() else { continue };
-                if ui.button(egui::RichText::new(name).monospace()).on_hover_text(tl!(v.description)).clicked() {
-                    add(text, name);
-                    ui.close();
-                }
-            }
-        });
+        expr_menus(ui, text);
     });
 }
 

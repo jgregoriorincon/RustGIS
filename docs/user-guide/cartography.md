@@ -578,7 +578,8 @@ Turn labels on per layer (Labeling › Labels › **Label**), then:
   installed families, `{"font": ""}` goes back to the label font).
 - **SQL**: label only the features that match a SQL clause (the language of definition
   queries), such as `pop_max > 5000000`. In the Labeling pane, Class › **SQL** › **New
-  expression**: write the clause (the field and operator buttons add to it), **Check** says
+  expression**: write the clause (the field and operator buttons, and the **Functions** and
+  **Variables** menus, add to it), **Check** says
   whether it reads and how many of the features the layer draws at the map's scale match
   (after its definition query, display filters and time window), and **Apply** sets it in one
   undo step; **Clear** removes the chosen class's clause, leaving other classes unchanged
