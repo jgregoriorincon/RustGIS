@@ -679,7 +679,9 @@ ribbon and the layer's right-click menu. A tab per topic shows one part at a tim
   scale**, and the **Depth priority** that View › Scene › Raise and Lower Priority change (a
   higher one draws on top, whatever the layer order).
 - **Query**, for a feature layer: its definition query, the SQL clause the features must match to
-  draw (the grammar is in [Expressions](expressions.md)). Buttons add a field or an operator, a red
+  draw (the grammar is in [Expressions](expressions.md)). Buttons add a field or an operator, and
+  the **Functions** and **Variables** menus a function (left open for its arguments, with what it
+  gives on hover) or a variable such as `$area`; a red
   line says what is wrong with a clause as you type it, **Apply** (or Ctrl+Enter) sets it and
   **Clear** draws every feature again. A clause being typed is kept while you look at another tab;
   choosing another layer or Escape in the box drops it.

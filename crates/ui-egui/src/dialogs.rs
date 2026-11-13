@@ -1969,16 +1969,21 @@ pub(crate) fn buttons(app: &mut RustGisApp, ui: &mut egui::Ui, ok: &str, f: impl
     close
 }
 
-/// Buttons that add one of `fields` (the first 24) or an operator to the clause `text`, as Select
-/// By Attributes and the Layer Properties pane's Query tab offer them. Each is set apart from what
-/// the clause ends with, so a name typed just before isn't run into it (`nameLIKE`).
+/// Buttons that add one of `fields` (the first 24), an operator, a function or a variable to the
+/// clause `text`, as Select By Attributes and the Layer Properties pane's Query tab offer them.
+/// Each is set apart from what the clause ends with, so a name typed just before isn't run into it
+/// (`nameLIKE`). The functions and variables are the language's own catalogs, the ones the parser
+/// reads, so one added to the language is listed here with no change.
 pub(crate) fn field_chips(ui: &mut egui::Ui, fields: &[rustgis_engine::data::Field], text: &mut String) {
     let add = |text: &mut String, word: &str| {
-        if !text.is_empty() && !text.ends_with(char::is_whitespace) {
+        if !text.is_empty() && !text.ends_with(char::is_whitespace) && !text.ends_with('(') {
             text.push(' ');
         }
         text.push_str(word);
-        text.push(' ');
+        // A call left open (`round(`) goes on with its arguments.
+        if !word.ends_with('(') {
+            text.push(' ');
+        }
     };
     ui.horizontal_wrapped(|ui| {
         ui.label(egui::RichText::new(tl!("Fields:")).small().weak());
@@ -1995,6 +2000,29 @@ pub(crate) fn field_chips(ui: &mut egui::Ui, fields: &[rustgis_engine::data::Fie
                 add(text, op);
             }
         }
+        // Each listed as it is written, with what it gives on hover. A function is added open,
+        // unless it takes no arguments (`pi()`).
+        ui.menu_button(tl!("Functions ▾"), |ui| {
+            egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                for f in rustgis_engine::data::query::functions() {
+                    let word = if f.max == 0 { format!("{}()", f.name) } else { format!("{}(", f.name) };
+                    let label = egui::RichText::new(f.signature).monospace();
+                    if ui.button(label).on_hover_text(tl!(f.description)).clicked() {
+                        add(text, &word);
+                        ui.close();
+                    }
+                }
+            });
+        });
+        ui.menu_button(tl!("Variables ▾"), |ui| {
+            for v in rustgis_engine::data::query::VARS {
+                let Some(&name) = v.names.first() else { continue };
+                if ui.button(egui::RichText::new(name).monospace()).on_hover_text(tl!(v.description)).clicked() {
+                    add(text, name);
+                    ui.close();
+                }
+            }
+        });
     });
 }
 
