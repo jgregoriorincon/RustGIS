@@ -115,6 +115,8 @@ pub(crate) fn close_pane_of(app: &mut RustGisApp, id: &str) -> bool {
     if !id.starts_with("ui.pane.") {
         return false;
     }
+    // Details is the Layer Properties pane on its Source tab (#1803): closing it closes that pane.
+    let id = if id == "ui.pane.details" { "ui.pane.layerProperties" } else { id };
     if let Some((pane, ..)) = LEFT_PANES.iter().find(|p| p.3 == id) {
         if app.ui.left == Some(*pane) {
             app.ui.left = None;
@@ -6338,8 +6340,8 @@ fn save_history_script(app: &mut RustGisApp) {
     }
 }
 
-/// What the Layer Properties pane's Source tab (#1803), once the Details pane, shows of a layer: its
-/// geometry, counts, source, coordinate system, extent and fields, or a raster's own details.
+/// What the Layer Properties pane's Source tab (#1803) shows of a layer: its geometry, counts,
+/// source, coordinate system, extent and fields, or a raster's own details.
 pub(crate) fn source_details(ui: &mut Ui, l: &Layer, t: &Tokens) {
     let e = l.extent();
     if let Some(rl) = &l.raster {

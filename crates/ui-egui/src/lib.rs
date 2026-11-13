@@ -2973,14 +2973,14 @@ impl RustGisApp {
                 toggle_right(&mut self.ui, RightPane::Symbology)
             }
             "ui.pane.history" => toggle_right(&mut self.ui, RightPane::History),
-            // The Details pane became the Layer Properties pane's Source tab (#1803): this shows
-            // that tab, and hides the pane when it is in view on it (or given "close"), as it hid
-            // Details.
+            // The Layer Properties pane on its Source tab (#1803), for the layer given (`{"layer"}`)
+            // or the selected one; with neither, it hides the pane when it is in view on Source.
             "ui.pane.details" => {
-                if layerprops::source_in_view(&self.ui) || p.get("close").and_then(Value::as_bool) == Some(true) {
+                let layer = p.get("layer").filter(|l| !l.is_null());
+                if layer.is_none() && layerprops::source_in_view(&self.ui) {
                     self.ui.close_right(RightPane::LayerProperties);
                 } else {
-                    return self.run_ui("ui.pane.layerProperties", &json!({"tab": "source"}));
+                    return self.run_ui("ui.pane.layerProperties", &json!({"tab": "source", "layer": layer}));
                 }
             }
             "ui.pane.editing" => toggle_right(&mut self.ui, RightPane::Editing),
