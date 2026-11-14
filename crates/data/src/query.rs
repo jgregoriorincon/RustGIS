@@ -521,8 +521,9 @@ struct Lexed {
     open: Option<(Open, usize)>,
 }
 
-/// Reads `s` into tokens. `tolerant` reads text being typed: a quote left open at the end, or a
-/// lone `@` or `$`, ends it instead of being an error.
+/// Reads `s` into tokens. `tolerant` reads text being typed: a quote left open at the end, or an
+/// `@` or `$` that is the last character, ends it instead of being an error. Anything else that
+/// can't be read is an error either way.
 fn lex_spans(s: &str, tolerant: bool) -> Result<Lexed, String> {
     if s.chars().count() > MAX_LEN {
         return Err("the expression is too long".into());

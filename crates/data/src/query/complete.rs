@@ -50,8 +50,10 @@ const SYMBOLS: [&str; 16] = ["=", "<>", "<", "<=", ">", ">=", "+", "-", "*", "/"
 /// What may be typed at `cursor` (in characters, as a text box counts them; past the end is the
 /// end) of `text`, an expression over `ds`'s fields. Only the text before the cursor is read, and
 /// it may be unfinished: an open quote, bracket or `CASE`, a field no layer has. `None` when
-/// that text can't be read at all (a character the language has no use for, longer than
-/// [`super::MAX_LEN`]).
+/// that text can't be read into words at all, wherever the fault is: a character the language
+/// has no use for (`#`), a number written wrong (`1.2.3`), an `@` or `$` with no name before
+/// more text, or longer than [`super::MAX_LEN`]. Nothing is offered then until it is put right,
+/// as the error the box shows for it says.
 pub fn complete_at(text: &str, cursor: usize, ds: &Dataset) -> Option<Completion> {
     let before: String = text.chars().take(cursor).collect();
     let cursor = before.chars().count();
@@ -254,8 +256,17 @@ mod tests {
         assert!(!at_end(&args).operand, "past the most arguments");
         let terms = "pop = 1 OR ".repeat(300);
         assert!(!at_end(&terms).operand, "past the most terms");
-        for text in ["'", "\"", "!", "@", "$", "CASE CASE CASE", ")))", ",,,", "a(", "1e", "pop IN (", "|"] {
-            let _ = complete_at(text, usize::MAX, &ds());
+        for text in ["CASE CASE CASE", ")))", ",,,", "a(", "1e", "pop IN ("] {
+            assert!(complete_at(text, usize::MAX, &ds()).is_some(), "{text}");
+        }
+        // A quote or sigil alone is a word begun.
+        for (text, place) in [("'", Place::Text), ("\"", Place::Field), ("!", Place::Field), ("@", Place::Code), ("$", Place::Code)] {
+            let c = at_end(text);
+            assert_eq!((c.place, c.word), (place, 0..1), "{text}");
+        }
+        // Text that can't be read into words, wherever the fault is before the cursor.
+        for text in ["|", "pop # 1 AND ", "pop > 1.2.3 AND ", "pop > $ "] {
+            assert!(complete_at(text, usize::MAX, &ds()).is_none(), "{text}");
         }
     }
 }
