@@ -509,8 +509,8 @@ fn lex(s: &str) -> Result<Vec<Tok>, String> {
 enum Open {
     /// `'text`.
     Text,
-    /// `"field` or `!field`.
-    Field,
+    /// `"field` or `!field`, with its quote.
+    Field(char),
 }
 
 /// Tokens with where each is in the text (in characters), and a quote left open at the end.
@@ -564,7 +564,7 @@ fn lex_spans(s: &str, tolerant: bool) -> Result<Lexed, String> {
                 loop {
                     match cs.get(i) {
                         None if tolerant => {
-                            open = Some((if q == '"' { Open::Field } else { Open::Text }, start));
+                            open = Some((if q == '"' { Open::Field(q) } else { Open::Text }, start));
                             break;
                         }
                         None => return Err("unterminated quote".into()),
@@ -592,7 +592,7 @@ fn lex_spans(s: &str, tolerant: bool) -> Result<Lexed, String> {
                 let st = i + 1;
                 let Some(end) = cs.get(st..).and_then(|r| r.iter().position(|c| *c == '!')) else {
                     if tolerant {
-                        open = Some((Open::Field, start));
+                        open = Some((Open::Field('!'), start));
                         break;
                     }
                     return Err("unexpected '!'".into());

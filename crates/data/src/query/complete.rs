@@ -14,7 +14,8 @@ use crate::Dataset;
 pub enum Place {
     /// Among the expression's words: fields, functions, operators…
     Code,
-    /// Inside `'text'`: no word of the language goes there (a field's values may).
+    /// Inside `'text'`: no word of the language goes there (a field's values may), so nothing
+    /// is said to go there; the call and the compared field still are.
     Text,
     /// Inside a quoted field name (`"Pop Est`, `!Pop Est`): a field goes there.
     Field,
@@ -26,7 +27,8 @@ pub struct Completion {
     /// The characters the word being typed takes (empty at the cursor when none is): what an
     /// accepted item replaces. In [`Place::Text`] and [`Place::Field`] it starts at the quote.
     pub word: Range<usize>,
-    /// What the word holds so far, without its quote: what items are matched against.
+    /// What the word holds so far, without its quote and with a doubled quote read as one
+    /// (`'O''Br` holds `O'Br`): what items are matched against.
     pub prefix: String,
     pub place: Place,
     /// A value can go here: a field, a function, a variable, a literal, `CASE`.
@@ -53,14 +55,15 @@ const SYMBOLS: [&str; 16] = ["=", "<>", "<", "<=", ">", ">=", "+", "-", "*", "/"
 /// that text can't be read into words at all, wherever the fault is: a character the language
 /// has no use for (`#`), a number written wrong (`1.2.3`), an `@` or `$` with no name before
 /// more text, or longer than [`super::MAX_LEN`]. Nothing is offered then until it is put right,
-/// as the error the box shows for it says.
+/// as the error the box shows for it says. The same when the text before the cursor stops being
+/// an expression before it ends (`pop > 1 ) AND`, `pop BETWEEN 1 OR`): nothing can follow it.
 pub fn complete_at(text: &str, cursor: usize, ds: &Dataset) -> Option<Completion> {
     let before: String = text.chars().take(cursor).collect();
     let cursor = before.chars().count();
     let Lexed { mut toks, spans, open } = lex_spans(&before, true).ok()?;
     let (place, word) = match open {
         Some((Open::Text, at)) => (Place::Text, at..cursor),
-        Some((Open::Field, at)) => (Place::Field, at..cursor),
+        Some((Open::Field(_), at)) => (Place::Field, at..cursor),
         // A name or variable that ends at the cursor is still being typed.
         None => match (toks.last(), spans.last()) {
             (Some(Tok::Ident(_) | Tok::Var(_)), Some(span)) if span.end == cursor => {
@@ -72,7 +75,13 @@ pub fn complete_at(text: &str, cursor: usize, ds: &Dataset) -> Option<Completion
         },
     };
     let quote = usize::from(place != Place::Code);
-    let prefix = before.chars().skip(word.start + quote).collect();
+    let prefix: String = before.chars().skip(word.start + quote).collect();
+    // The quote doubled is the quote itself, as the lexer reads it (`!` has no such escape).
+    let prefix = match open {
+        Some((Open::Text, _)) => prefix.replace("''", "'"),
+        Some((Open::Field('"'), _)) => prefix.replace("\"\"", "\""),
+        _ => prefix,
+    };
     let mut parser = Parser {
         toks,
         pos: 0,
@@ -84,8 +93,12 @@ pub fn complete_at(text: &str, cursor: usize, ds: &Dataset) -> Option<Completion
         calls: Vec::new(),
     };
     // Read for what it notes on the way: an error at the end (nothing more to read) is expected.
+    // A reading that never got to the end stopped at a mistake before it.
     let _ = parser.or();
     let probe = parser.probe.take()?.into_inner();
+    if !probe.reached {
+        return None;
+    }
     let mut keywords = probe.keywords;
     if probe.operand {
         keywords.extend([Kw::Null, Kw::True, Kw::False, Kw::Case]);
@@ -93,7 +106,18 @@ pub fn complete_at(text: &str, cursor: usize, ds: &Dataset) -> Option<Completion
     let keywords = Kw::ALL.iter().copied().filter(|k| keywords.contains(k)).collect();
     let symbols = SYMBOLS.into_iter().filter(|s| probe.symbols.contains(s)).collect();
     let call = probe.call.and_then(|(f, arg)| Some((f?.spec(), arg)));
-    Some(Completion { word, prefix, place, operand: probe.operand, keywords, symbols, call, field: probe.field })
+    // Inside text only its call and the field it is compared with mean anything.
+    let code = place != Place::Text;
+    Some(Completion {
+        word,
+        prefix,
+        place,
+        operand: probe.operand && code,
+        keywords: if code { keywords } else { Vec::new() },
+        symbols: if code { symbols } else { Vec::new() },
+        call,
+        field: probe.field,
+    })
 }
 
 #[cfg(test)]
@@ -167,6 +191,12 @@ mod tests {
         }
         let c = at_end("name = 'Pa");
         assert_eq!((c.word, c.prefix.as_str()), (7..10, "Pa"));
+        // Inside text no word of the language goes: only the call and the field are said.
+        assert!(!c.operand && c.keywords.is_empty() && c.symbols.is_empty());
+        let c = at_end("area('h");
+        assert_eq!((c.place, c.call.map(|(f, a)| (f.func, a))), (Place::Text, Some((Func::Area, 0))));
+        // A doubled quote is one quote, as the lexer reads it.
+        assert_eq!(at_end("name = 'O''Br").prefix, "O'Br");
         // A value compared with something that isn't a field has no field to take values from.
         assert_eq!(at_end("upper(name) = ").field, None);
     }
@@ -218,6 +248,8 @@ mod tests {
         assert_eq!((c.place, c.word, c.prefix.as_str(), c.operand), (Place::Field, 0..6, "Pop E", true));
         let c = at_end("pop > 1 AND !Pop");
         assert_eq!((c.place, c.word, c.prefix.as_str()), (Place::Field, 12..16, "Pop"));
+        // A doubled `"` is one; `!` has no such escape.
+        assert_eq!(at_end("\"Pop \"\"E").prefix, "Pop \"E");
     }
 
     #[test]
@@ -243,20 +275,19 @@ mod tests {
 
     #[test]
     fn hostile_text_is_refused_or_read_within_the_limits() {
-        // Deeper than the parser reads: nothing is offered, and nothing overflows.
+        // Deeper than the parser reads: nothing, and nothing overflows.
         let deep = "(".repeat(super::super::MAX_LEN);
-        let c = at_end(&deep);
-        assert!(!c.operand && c.keywords.is_empty());
+        assert!(complete_at(&deep, usize::MAX, &ds()).is_none());
         // Longer than an expression may be.
         assert!(complete_at(&"a".repeat(super::super::MAX_LEN + 1), usize::MAX, &ds()).is_none());
         // A character the language has no use for.
         assert!(complete_at("pop # ", 6, &ds()).is_none());
         // Many arguments, many terms: within the limits, then nothing.
         let args = format!("coalesce({}", "1, ".repeat(200));
-        assert!(!at_end(&args).operand, "past the most arguments");
+        assert!(complete_at(&args, usize::MAX, &ds()).is_none(), "past the most arguments");
         let terms = "pop = 1 OR ".repeat(300);
-        assert!(!at_end(&terms).operand, "past the most terms");
-        for text in ["CASE CASE CASE", ")))", ",,,", "a(", "1e", "pop IN ("] {
+        assert!(complete_at(&terms, usize::MAX, &ds()).is_none(), "past the most terms");
+        for text in ["CASE CASE CASE", "a(", "1e", "pop IN ("] {
             assert!(complete_at(text, usize::MAX, &ds()).is_some(), "{text}");
         }
         // A quote or sigil alone is a word begun.
@@ -266,6 +297,10 @@ mod tests {
         }
         // Text that can't be read into words, wherever the fault is before the cursor.
         for text in ["|", "pop # 1 AND ", "pop > 1.2.3 AND ", "pop > $ "] {
+            assert!(complete_at(text, usize::MAX, &ds()).is_none(), "{text}");
+        }
+        // Text that stops being an expression before the cursor: nothing can follow it.
+        for text in [")))", ",,,", "pop > 1 ) AND ", "pop BETWEEN 1 OR ", "pop pop "] {
             assert!(complete_at(text, usize::MAX, &ds()).is_none(), "{text}");
         }
     }
