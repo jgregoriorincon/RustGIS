@@ -848,7 +848,8 @@ mod tests {
         h.run();
         open_tab(&mut h, "Query");
         type_query(&mut h, "name =");
-        let first = functions().next().unwrap();
+        // One that takes arguments, so it is added open.
+        let first = functions().find(|f| f.max > 0).unwrap();
         h.get_by_role_and_label(Role::Button, "Functions ▾").click();
         h.run();
         h.get_by_role_and_label(Role::Button, first.signature).click();
