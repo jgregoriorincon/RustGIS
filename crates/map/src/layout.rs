@@ -1508,19 +1508,20 @@ impl ElementKind {
         self.chart_data_with(ds, Some(&colour))
     }
 
-    /// [`ElementKind::chart_data`], each bar coloured by `colour` (a feature row's colour, none
-    /// for a feature drawn with nothing) when given: a bar per feature its row's, a grouped bar the
+    /// [`ElementKind::chart_data`], each bar coloured by `colour` (a feature row's colour, none for
+    /// a feature drawn with nothing) when given: a bar per feature its row's, a grouped bar the
     /// colour all the features its statistic reads share (a count's every feature, another's those
-    /// with a number), those drawn with nothing aside. A bar without one keeps the chart's. Grouped,
-    /// it holds a colour (5 bytes) per value besides, and reads no more colours of a value once its
-    /// features have two; each colour read is the feature's symbol, as drawing the map reads it.
+    /// with a number), those drawn with nothing aside. A bar without one keeps the chart's.
+    /// Grouped, it holds a colour (5 bytes) per value besides, and reads no more colours of a value
+    /// once its features have two; each colour read is the feature's symbol, as drawing the map
+    /// reads it.
     ///
     /// Stacked ([`ElementKind::chart_stack`]), the colours go to the values of the stack field
-    /// instead: each one takes the colour all its features on the bars shown share, else its palette
-    /// colour, so the key holds one colour per value. Stacked, it also holds a sum, a colour and two
-    /// indexes (32 bytes, and the B-tree's own room) for each pair of a group value and a stack value
-    /// that some feature has, at most one per feature, and the stack field's names once, as the
-    /// group field's.
+    /// instead: each one takes the colour all its features on the bars shown share, else its
+    /// palette colour, so the key holds one colour per value. Stacked, it also holds a sum, a
+    /// colour and two indexes (32 bytes, and the B-tree's own room) for each pair of a group value
+    /// and a stack value that some feature has, at most one per feature, and the stack field's
+    /// names once, as the group field's.
     fn chart_data_with(&self, ds: &rustgis_data::Dataset, colour: Option<&dyn Fn(usize) -> Option<Rgba>>) -> Option<ChartData> {
         let ElementKind::Chart { field, label, group, statistic, order, bars, other, .. } = self else { return None };
         let fi = ds.field_index(field)?;
@@ -1584,7 +1585,7 @@ impl ElementKind {
                         if let Some((_, (total, shade))) = &mut run {
                             // A sum adds the feature's number; a count, the feature.
                             *total += n.unwrap_or(1.0);
-                            // Once mixed, a pair's colour is settled: no more symbols are read for it.
+                            // Once mixed, a pair's colour is settled: no more symbols are read.
                             if let Some(colour) = colour.filter(|_| !matches!(shade, Shade::Mixed)) {
                                 shade.add(colour(row));
                             }
@@ -1919,14 +1920,15 @@ fn add_cell(cells: &mut std::collections::BTreeMap<(usize, usize), (f64, Shade)>
     s.merge(shade);
 }
 
-/// A stacked chart's key and stretches ([`ElementKind::chart_data`]) from the total of each pair
-/// of a group value and a stack value (`cells`), the bar each group is drawn in (`bar_of`, an
-/// Other bar's groups all in the last of `bars`) and the stack values' names; `coloured`, each
-/// pair's colour gives a value the one its features share over the bars shown. The key holds the
-/// values the bars show, by their total over them, largest first; past [`CHART_STACKS`], the
-/// largest all but the last and an Other for the rest; `by_label`, those kept A to Z. Returns the key, each bar's stretches by the key's order, the
-/// values of the key keeping their palette colour though coloured, the values gathered, and the
-/// bars drawn whole (their stretches empty) as a stretch of theirs is past a number's range.
+/// A stacked chart's key and stretches ([`ElementKind::chart_data`]) from the total of each pair of
+/// a group value and a stack value (`cells`), the bar each group is drawn in (`bar_of`, an Other
+/// bar's groups all in the last of `bars`) and the stack values' names; `coloured`, each pair's
+/// colour gives a value the one its features share over the bars shown. The key holds the values
+/// the bars show, by their total over them, largest first; past [`CHART_STACKS`], the largest all
+/// but the last and an Other for the rest; `by_label`, those kept A to Z. Returns the key, each
+/// bar's stretches by the key's order, the values of the key keeping their palette colour though
+/// coloured, the values gathered, and the bars drawn whole (their stretches empty) as a stretch of
+/// theirs is past a number's range.
 fn stack_bars(
     cells: &std::collections::BTreeMap<(usize, usize), (f64, Shade)>,
     bar_of: &[Option<usize>],
@@ -1941,13 +1943,14 @@ fn stack_bars(
     let mut shades = vec![Shade::Unread; names.len()];
     for (_, k, t, shade) in shown() {
         if let (Some(s), Some(c)) = (totals.get_mut(k), shades.get_mut(k)) {
-            // A sum past a number's range orders its value as none.
-            *s = Some(s.unwrap_or(0.0) + if t.is_finite() { t } else { 0.0 });
+            *s = Some(s.unwrap_or(0.0) + t);
             c.merge(shade);
         }
     }
     // The key keeps the values with the largest totals, ordered by label once kept.
-    let mut by_total: Vec<(f64, usize)> = totals.iter().enumerate().filter_map(|(k, t)| t.map(|t| (t, k))).collect();
+    // A value whose total is past a number's range, a pair's or once added up, orders as 0.
+    let mut by_total: Vec<(f64, usize)> =
+        totals.iter().enumerate().filter_map(|(k, t)| t.map(|t| (if t.is_finite() { t } else { 0.0 }, k))).collect();
     by_total.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     let own = if by_total.len() > CHART_STACKS { CHART_STACKS - 1 } else { by_total.len() };
     if let Some(kept) = by_label.then(|| by_total.get_mut(..own)).flatten() {
@@ -3027,7 +3030,8 @@ mod tests {
     }
 
     /// A bar a stretch of which adds up past a number's range, or whose stretches do once stacked,
-    /// its total within it, is drawn whole and counted, its stretches left empty rather than that one taken as 0; the others stack.
+    /// its total within it, is drawn whole and counted, its stretches left empty rather than that
+    /// one taken as 0; the others stack.
     #[test]
     fn a_stretch_past_a_numbers_range_leaves_its_bar_whole() {
         let names = || vec![Some("x".to_string()), Some("y".to_string())];
@@ -3048,6 +3052,11 @@ mod tests {
         let pairs = [((0, 0), 1e308), ((0, 1), 1e308), ((0, 2), -1e308)];
         let (_, stretches, _, _, whole) = stack_bars(&cells(&pairs), &[Some(0)], 1, names, false, true);
         assert_eq!((stretches, whole), (vec![Vec::new()], 1));
+        // Its values' totals past the range too, x and y order as 0, after z's 1.
+        let names = vec![Some("x".to_string()), Some("y".to_string()), Some("z".to_string())];
+        let pairs = [((0, 0), 1e308), ((0, 1), 1e308), ((1, 0), 1e308), ((1, 1), 1e308), ((1, 2), 1.0)];
+        let (key, ..) = stack_bars(&cells(&pairs), &[Some(0), Some(1)], 2, names, false, false);
+        assert_eq!(key.first().map(|k| k.0.as_str()), Some("z"));
     }
 
     /// Past the palette's colours, the key keeps all but the last of the values with the largest
@@ -3092,8 +3101,8 @@ mod tests {
     }
 
     /// Stacked and coloured by classes, each value of the key takes the colour all its features on
-    /// the bars shown share on the map; one whose features have several, or show none, keeps its palette colour
-    /// and is counted. The bars hold no colours of their own.
+    /// the bars shown share on the map; one whose features have several, or show none, keeps its
+    /// palette colour and is counted. The bars hold no colours of their own.
     #[test]
     fn stacked_bars_colour_their_key_by_classes() {
         let ds = kinds();

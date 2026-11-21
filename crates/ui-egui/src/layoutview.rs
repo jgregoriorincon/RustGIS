@@ -2122,7 +2122,7 @@ fn properties(app: &mut RustGisApp, ui: &mut Ui, layout: &Layout, li: usize) {
                             }
                         }
                         ui.end_row();
-                        // Grouped and summing or counting, its bars stack by another field (#2487 part 3b).
+                        // Grouped, summing or counting: stacked by another field (#2487 part 3b).
                         if group.is_some() && matches!(statistic, StatKind::Sum | StatKind::Count) {
                             let input_label = ui.label(tl!("Stack by"));
                             // Only the fields it can stack by: not the one it groups by.
