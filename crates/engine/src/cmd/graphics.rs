@@ -267,18 +267,7 @@ fn color(p: &Value, k: &str) -> Result<Option<String>, String> {
 pub(crate) fn picture(p: &Value) -> Result<String, String> {
     let b64 = match (ps(p, "image"), ps(p, "path")) {
         (Some(b), _) => b.trim().to_string(),
-        (None, Some(path)) => {
-            use std::io::Read;
-            // Read at most one byte past the limit, so a huge or endless file is refused.
-            let mut bytes = Vec::new();
-            let file = rustgis_data::provenance::open(path).map_err(|e| format!("{path}: {e}"))?;
-            (&file).take(MAX_PICTURE as u64 + 1).read_to_end(&mut bytes).map_err(|e| format!("{path}: {e}"))?;
-            if bytes.len() > MAX_PICTURE {
-                return Err("the picture is too large".into());
-            }
-            rustgis_data::provenance::buffer(std::path::Path::new(path), &file, &bytes);
-            base64::engine::general_purpose::STANDARD.encode(bytes)
-        }
+        (None, Some(path)) => base64::engine::general_purpose::STANDARD.encode(read_picture_file(path, MAX_PICTURE)?),
         (None, None) => return Err("a picture needs an image or a path".into()),
     };
     if b64.len() > MAX_PICTURE / 3 * 4 + 4 {
@@ -288,6 +277,23 @@ pub(crate) fn picture(p: &Value) -> Result<String, String> {
         return Err("the picture isn't a PNG or JPEG image".into());
     }
     Ok(b64)
+}
+
+/// What [`read_picture_file`] says of a file past its limit.
+pub(crate) const TOO_LARGE: &str = "the picture is too large";
+
+/// A picture file's bytes, at most `max` (refused past it: read at most one byte more, so a huge
+/// or endless file is too), its provenance kept.
+pub(crate) fn read_picture_file(path: &str, max: usize) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    let file = rustgis_data::provenance::open(path).map_err(|e| format!("{path}: {e}"))?;
+    (&file).take(max as u64 + 1).read_to_end(&mut bytes).map_err(|e| format!("{path}: {e}"))?;
+    if bytes.len() > max {
+        return Err(TOO_LARGE.into());
+    }
+    rustgis_data::provenance::buffer(std::path::Path::new(path), &file, &bytes);
+    Ok(bytes)
 }
 
 fn add(s: &mut Session, p: &Value) -> CmdResult {

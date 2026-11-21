@@ -48,6 +48,66 @@ fn qgis_text(p: &Value) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|_| "not a QGIS file (it isn't text)".to_string())
 }
 
+/// The folder of the file `path` names (`.` for a file named without one), which its relative
+/// paths start from.
+fn file_dir(p: &Value) -> Option<String> {
+    ps(p, "path").and_then(|path| std::path::Path::new(path).parent()).map(|d| match d.to_string_lossy() {
+        d if d.is_empty() => ".".to_string(),
+        d => d.into_owned(),
+    })
+}
+
+/// The most bytes of base64 of raster marker images one import reads: what a run keeps
+/// (`MAX_PICTURES_BYTES`), counting those that turn out not to draw too, so a project naming many
+/// files that aren't images reads no more than one of images (in tests, a few small images').
+const MARKER_READ_BYTES: usize = if cfg!(test) { 1 << 10 } else { rustgis_map::symbology::MAX_PICTURES_BYTES };
+
+/// The importer's reader of raster image markers' images ([`qgis::ReadImage`]): [`marker_image`]
+/// within [`MARKER_READ_BYTES`] for the import.
+fn marker_images() -> impl FnMut(&str) -> Result<(String, f32), &'static str> {
+    let mut read = 0;
+    move |source| {
+        if read >= MARKER_READ_BYTES {
+            return Err("past the bytes of images an import reads");
+        }
+        marker_image(source, &mut read)
+    }
+}
+
+/// Reads a raster image marker's image for the importer: its `base64:` text, or its file's,
+/// within what a picture marker keeps (`MAX_PICTURE_BYTES` of base64), checked as `layer.marker`
+/// checks an image; with its height over its width. Its base64's length is added to `read`.
+fn marker_image(source: &str, read: &mut usize) -> Result<(String, f32), &'static str> {
+    use base64::Engine;
+    use rustgis_map::symbology::MAX_PICTURE_BYTES;
+    const TOO_LARGE: &str = "whose image is past 2 MiB of base64";
+    let b64 = match source.strip_prefix("base64:") {
+        Some(b64) => b64.trim().to_string(),
+        // Base64 is 4 characters for 3 bytes.
+        None => match super::graphics::read_picture_file(source, MAX_PICTURE_BYTES / 4 * 3) {
+            Ok(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
+            Err(e) if e == super::graphics::TOO_LARGE => return Err(TOO_LARGE),
+            Err(_) => return Err("whose image file doesn't open"),
+        },
+    };
+    *read += b64.len();
+    if b64.is_empty() {
+        return Err("with no image");
+    }
+    if b64.len() > MAX_PICTURE_BYTES {
+        return Err(TOO_LARGE);
+    }
+    // As `layer.marker` checks one: one kept already decodes into the drawing's cache.
+    let readable = match rustgis_map::Picture::kept(&b64) {
+        Some(kept) => rustgis_render::picture_marker_draws(kept),
+        None => rustgis_render::picture_marker_readable(&b64),
+    };
+    match rustgis_render::picture_size(&b64) {
+        Some((w, h)) if readable && w > 0 => Ok((b64, h as f32 / w as f32)),
+        _ => Err("whose image isn't a PNG or JPEG RustGIS reads"),
+    }
+}
+
 /// The most bytes of a QGIS file read (a `.qgz` can carry data files beside its project).
 const MAX_FILE: u64 = 256 << 20;
 /// The most bytes of a project's or style's XML parsed: its tree is several times larger than
@@ -78,14 +138,9 @@ fn import_project(s: &mut Session, p: &Value) -> CmdResult {
     let text = qgis_text(p)?;
     // The folder relative paths start from: `dir` (a blank one is none, so they don't start
     // from the working directory), else the file's own (`.` for a file named without one).
-    let dir = ps(p, "dir").filter(|d| !d.trim().is_empty()).map(str::to_string).or_else(|| {
-        ps(p, "path").and_then(|path| std::path::Path::new(path).parent()).map(|d| match d.to_string_lossy() {
-            d if d.is_empty() => ".".to_string(),
-            d => d.into_owned(),
-        })
-    });
+    let dir = ps(p, "dir").filter(|d| !d.trim().is_empty()).map(str::to_string).or_else(|| file_dir(p));
     let mut report = Report::default();
-    let project = qgis::read_project(&text, dir.as_deref().unwrap_or_default(), &mut report)?;
+    let project = qgis::read_project(&text, dir.as_deref().unwrap_or_default(), &mut marker_images(), &mut report)?;
     // A map of its own, named as the project.
     let name = if project.title.is_empty() { "QGIS project" } else { project.title.as_str() };
     s.run_part("map.new", &json!({"name": name}))?;
@@ -1936,7 +1991,9 @@ fn import_style(s: &mut Session, p: &Value) -> CmdResult {
     let id = s.layer_id(p)?;
     let name = s.map().layer(id).map(|l| l.name.clone()).ok_or("no such layer")?;
     let mut report = Report::default();
-    let style = qgis::read_style(&text, &name, &mut report)?;
+    // Its raster image markers' relative files start from the style file's folder.
+    let dir = file_dir(p).unwrap_or_default();
+    let style = qgis::read_style(&text, &name, &dir, &mut marker_images(), &mut report)?;
     let l = s.map_mut().layer_mut(id).ok_or("no such layer")?;
     if l.raster.is_some() {
         // A style that doesn't fit leaves the raster as it was, its opacity and scale range too.
