@@ -47,7 +47,7 @@ const KEYS: &[&str] = &[
     "type",
     "ref",
 ];
-/// Keys that make a closed way an area.
+/// Keys that make a closed way an area, for an OSM file and an Overpass answer alike.
 const AREA_KEYS: &[&str] = &[
     "aeroway",
     "amenity",
@@ -56,17 +56,60 @@ const AREA_KEYS: &[&str] = &[
     "craft",
     "geological",
     "historic",
+    "landcover",
     "landuse",
     "leisure",
+    "man_made",
     "military",
     "natural",
     "office",
+    "parking",
     "place",
+    "public_transport",
     "shop",
     "sport",
     "tourism",
     "water",
 ];
+
+/// Lifecycle prefixes (OSM wiki, "Lifecycle prefix"): `destroyed:building=house` is the footprint
+/// of a house that collapsed, with no `building=*` left.
+const LIFECYCLE_PREFIXES: &[&str] = &[
+    "abandoned:",
+    "construction:",
+    "demolished:",
+    "destroyed:",
+    "disused:",
+    "planned:",
+    "proposed:",
+    "razed:",
+    "removed:",
+    "ruins:",
+    "was:",
+];
+
+/// Whether a closed way is an area by its tags: the one rule for a `.osm.pbf` file and an Overpass
+/// answer, so both give the same layers. `area=yes|no` decides; else a closed road or barrier is
+/// a ring; else a key of `AREA_KEYS`, also behind a lifecycle prefix, makes it an area, except a
+/// line of nature (coastline, cliff, tree row, ridge) and a waterway that isn't a water surface.
+pub fn closed_way_is_area(tags: &[(String, String)]) -> bool {
+    match tag(tags, "area") {
+        Some("yes") => return true,
+        Some("no") => return false,
+        _ => {}
+    }
+    if tag(tags, "highway").is_some() || tag(tags, "barrier").is_some() {
+        return false;
+    }
+    tags.iter().any(|(k, v)| {
+        let k = LIFECYCLE_PREFIXES.iter().find_map(|p| k.strip_prefix(p)).unwrap_or(k);
+        match k {
+            "natural" => !matches!(v.as_str(), "coastline" | "cliff" | "tree_row" | "ridge"),
+            "waterway" => matches!(v.as_str(), "riverbank" | "dock" | "boatyard"),
+            _ => AREA_KEYS.contains(&k),
+        }
+    })
+}
 
 /// Whether bytes start like an OSM PBF file (its first block an `OSMHeader`), not a vector tile.
 pub fn looks_like_osm_pbf(bytes: &[u8]) -> bool {
@@ -186,7 +229,7 @@ fn tags(strings: &[String], keys: &[u64], vals: &[u64]) -> Tags {
         .collect()
 }
 
-fn tag<'t>(t: &'t Tags, k: &str) -> Option<&'t str> {
+fn tag<'t>(t: &'t [(String, String)], k: &str) -> Option<&'t str> {
     t.iter().find(|(a, _)| a == k).map(|(_, v)| v.as_str())
 }
 
@@ -563,14 +606,7 @@ pub fn read(file_name: &str, bytes: &[u8]) -> Result<Vec<(Dataset, ReadReport)>>
             continue;
         };
         let closed = pts.len() >= 4 && pts.first() == pts.last();
-        let area = closed
-            && tag(t, "area") != Some("no")
-            && (tag(t, "area") == Some("yes")
-                || t.iter().any(|(k, v)| {
-                    AREA_KEYS.contains(&k.as_str())
-                        && !(k == "natural" && matches!(v.as_str(), "coastline" | "cliff" | "tree_row" | "ridge"))
-                }));
-        if area {
+        if closed && closed_way_is_area(t) {
             polys.push_next(Some(Geometry::Polygon(vec![vec![pts]])), attrs(*id, t));
         } else if pts.len() >= 2 {
             lines.push_next(Some(Geometry::Line(vec![pts])), attrs(*id, t));
@@ -817,6 +853,42 @@ pub(crate) mod tests {
         let forest = polys.features.iter().find(|f| f.attrs[0] == Value::Int(200)).unwrap();
         assert!(matches!(&forest.geometry, Some(Geometry::Polygon(p)) if p.len() == 1 && p[0].len() == 2), "{:?}", forest.geometry);
         assert!(layers[0].1.messages.is_empty(), "{:?}", layers[0].1.messages);
+    }
+
+    #[test]
+    fn closed_way_areas() {
+        let t = |kv: &[(&str, &str)]| -> Tags { kv.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect() };
+        for area in [
+            t(&[("building", "yes")]),
+            t(&[("destroyed:building", "house"), ("damage:event", "quake")]),
+            t(&[("demolished:building", "yes")]),
+            t(&[("ruins:building", "yes")]),
+            t(&[("disused:amenity", "school")]),
+            t(&[("man_made", "wastewater_plant")]),
+            t(&[("sport", "soccer")]),
+            t(&[("waterway", "riverbank")]),
+            t(&[("highway", "pedestrian"), ("area", "yes")]),
+            t(&[("name", "x"), ("area", "yes")]),
+            // An islet drawn as one closed coastline: the place makes it an area, the coastline
+            // doesn't keep it a line (Overpass read it as a line before both readers shared this).
+            t(&[("natural", "coastline"), ("place", "islet")]),
+            t(&[("waterway", "stream"), ("landuse", "meadow")]),
+        ] {
+            assert!(closed_way_is_area(&area), "{area:?}");
+        }
+        for ring in [
+            t(&[("highway", "residential")]),
+            t(&[("barrier", "fence"), ("landuse", "meadow")]),
+            t(&[("building", "yes"), ("area", "no")]),
+            t(&[("natural", "coastline")]),
+            t(&[("destroyed:natural", "ridge")]),
+            t(&[("waterway", "stream")]),
+            t(&[("destroyed:railway", "rail")]),
+            t(&[("building:levels", "2")]),
+            t(&[("name", "x")]),
+        ] {
+            assert!(!closed_way_is_area(&ring), "{ring:?}");
+        }
     }
 
     #[test]
