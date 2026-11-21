@@ -198,6 +198,13 @@ too, since an older reader warns that it ignores the key; `"border": null` only 
 back and needs nothing. A saved `layout.import` whose `text` has such a frame requires it as well.
 Layout files are not covered, as for backgrounds (#2277).
 
+Projects with a legend whose text isn't the default 9 points (`text_size` on a legend) require
+`layout-legend-text`, so an older reader refuses them instead of drawing the legend at 9 points
+and saving it again without its size (#2581). A saved `layout.addElement` for a legend or
+`layout.update` that gives `textSize` another size requires it too; `null` or 9 only give the
+default and need nothing. A saved `layout.import` whose `text` has such a legend requires it as
+well. Layout files are not covered, as for backgrounds (#2277).
+
 A coordinate system read from WKT is saved with its PROJ definition, which older readers read,
 and its WKT beside it (`wkt`), which this release reads first. Projects, map files and layer
 files require `crs-wkt` when a saved system's definition doesn't place points as its WKT does
