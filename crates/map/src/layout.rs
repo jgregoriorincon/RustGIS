@@ -1516,9 +1516,9 @@ impl ElementKind {
     /// features have two; each colour read is the feature's symbol, as drawing the map reads it.
     ///
     /// Stacked ([`ElementKind::chart_stack`]), the colours go to the values of the stack field
-    /// instead: each one takes the colour all its features in the chart share, else its palette
-    /// colour, so the key holds one colour per value. Stacked, it also holds a sum and two indexes
-    /// (24 bytes, and the B-tree's own room) for each pair of a group value and a stack value
+    /// instead: each one takes the colour all its features on the bars shown share, else its palette
+    /// colour, so the key holds one colour per value. Stacked, it also holds a sum, a colour and two
+    /// indexes (32 bytes, and the B-tree's own room) for each pair of a group value and a stack value
     /// that some feature has, at most one per feature, and the stack field's names once, as the
     /// group field's.
     fn chart_data_with(&self, ds: &rustgis_data::Dataset, colour: Option<&dyn Fn(usize) -> Option<Rgba>>) -> Option<ChartData> {
@@ -1543,15 +1543,14 @@ impl ElementKind {
         let mut drawn: Vec<(f64, usize)> = Vec::new();
         // Coloured, grouped: the colour each value's features share, by the tallies' order.
         let mut shades: Vec<Shade> = Vec::new();
-        // Stacked: the colour each stack value's features share over the chart, by the order the
-        // values first come, and the total of each pair of a group value and a stack value. Only a
-        // sum or a count stacks, so a total is all a stretch needs.
+        // Stacked: the total of each pair of a group value and a stack value, and coloured the
+        // colour the pair's features share, so a value's colour is read only over the bars shown.
+        // Only a sum or a count stacks, so a total is all a stretch needs.
         let mut stacks = ValueIndex::default();
-        let mut stack_shades: Vec<Shade> = Vec::new();
-        let mut cells = std::collections::BTreeMap::<(usize, usize), f64>::new();
-        // The pair the last features were in, and their total: features in a row of the same pair
-        // (as sorted or nearby rows often are) are added up before the map is looked up.
-        let mut run: Option<((usize, usize), f64)> = None;
+        let mut cells = std::collections::BTreeMap::<(usize, usize), (f64, Shade)>::new();
+        // The pair the last features were in, their total and colour: features in a row of the
+        // same pair (as sorted or nearby rows often are) are added up before the map is looked up.
+        let mut run: Option<((usize, usize), (f64, Shade))> = None;
         let stat = match gi {
             Some(gi) => {
                 let mut index = ValueIndex::default();
@@ -1576,23 +1575,19 @@ impl ElementKind {
                             }
                         };
                     if let Some(si) = si.filter(|_| counted) {
-                        let k = stacks.slot(ds.value(row, si));
-                        if k == stack_shades.len() {
-                            stack_shades.push(Shade::Unread);
+                        let pair = (at, stacks.slot(ds.value(row, si)));
+                        if run.as_ref().is_none_or(|(p, _)| *p != pair)
+                            && let Some((p, cell)) = run.replace((pair, (0.0, Shade::Unread)))
+                        {
+                            add_cell(&mut cells, p, cell);
                         }
-                        // A sum adds the feature's number; a count, the feature.
-                        let amount = n.unwrap_or(1.0);
-                        match &mut run {
-                            Some((pair, total)) if *pair == (at, k) => *total += amount,
-                            _ => {
-                                if let Some((pair, total)) = run.replace(((at, k), amount)) {
-                                    *cells.entry(pair).or_default() += total;
-                                }
+                        if let Some((_, (total, shade))) = &mut run {
+                            // A sum adds the feature's number; a count, the feature.
+                            *total += n.unwrap_or(1.0);
+                            // Once mixed, a pair's colour is settled: no more symbols are read for it.
+                            if let Some(colour) = colour.filter(|_| !matches!(shade, Shade::Mixed)) {
+                                shade.add(colour(row));
                             }
-                        }
-                        // Once mixed, a value's colour is settled: no more symbols are read for it.
-                        if let (Some(colour), Some(shade)) = (colour, stack_shades.get_mut(k).filter(|s| !matches!(s, Shade::Mixed))) {
-                            shade.add(colour(row));
                         }
                     } else if let Some(colour) = colour.filter(|_| counted) {
                         shades.resize(groups.len(), Shade::Unread);
@@ -1601,8 +1596,8 @@ impl ElementKind {
                         }
                     }
                 }
-                if let Some((pair, total)) = run.take() {
-                    *cells.entry(pair).or_default() += total;
+                if let Some((pair, cell)) = run.take() {
+                    add_cell(&mut cells, pair, cell);
                 }
                 // A value whose features have no number has no bar: they are counted in `no_number`;
                 // one whose statistic is past a number's range, in `out_of_range`.
@@ -1684,7 +1679,7 @@ impl ElementKind {
                     }
                 }
                 let bars = drawn.len() + usize::from(gathered.is_some());
-                stack_bars(&cells, &bar_of, bars, stacks.names(), &stack_shades, colour.is_some(), *order == ChartOrder::Category)
+                stack_bars(&cells, &bar_of, bars, stacks.names(), colour.is_some(), *order == ChartOrder::Category)
             }
         };
         // Coloured, each bar's colour, those without one counted; an Other bar keeps the chart's.
@@ -1814,6 +1809,16 @@ enum Shade {
 }
 
 impl Shade {
+    /// The colour two sets of features share: the one they both show, or either's when the other
+    /// shows none.
+    fn merge(&mut self, other: Shade) {
+        match other {
+            Shade::Unread => {}
+            Shade::One(c) => self.add(Some(c)),
+            Shade::Mixed => *self = Shade::Mixed,
+        }
+    }
+
     /// A feature drawn with nothing (a hidden class) shows no colour, so it leaves the bar the
     /// colour of the features that do show.
     fn add(&mut self, c: Option<Rgba>) {
@@ -1907,39 +1912,47 @@ pub fn chart_stack_refusal(group: Option<&str>, statistic: StatKind, stack: &str
     }
 }
 
+/// Adds a run of features' total and colour to their pair's in `cells`.
+fn add_cell(cells: &mut std::collections::BTreeMap<(usize, usize), (f64, Shade)>, pair: (usize, usize), (total, shade): (f64, Shade)) {
+    let (t, s) = cells.entry(pair).or_insert((0.0, Shade::Unread));
+    *t += total;
+    s.merge(shade);
+}
+
 /// A stacked chart's key and stretches ([`ElementKind::chart_data`]) from the total of each pair
 /// of a group value and a stack value (`cells`), the bar each group is drawn in (`bar_of`, an
-/// Other bar's groups all in the last of `bars`), the stack values' names and the colour each
-/// one's features share (`shades`, read when `coloured`). The key holds the values the bars show,
-/// by their total over them, largest first (A to Z `by_label`); past [`CHART_STACKS`], all but the
-/// last and an Other for the rest. Returns the key, each bar's stretches by the key's order, the
+/// Other bar's groups all in the last of `bars`) and the stack values' names; `coloured`, each
+/// pair's colour gives a value the one its features share over the bars shown. The key holds the
+/// values the bars show, by their total over them, largest first; past [`CHART_STACKS`], the
+/// largest all but the last and an Other for the rest; `by_label`, those kept A to Z. Returns the key, each bar's stretches by the key's order, the
 /// values of the key keeping their palette colour though coloured, the values gathered, and the
 /// bars drawn whole (their stretches empty) as a stretch of theirs is past a number's range.
 fn stack_bars(
-    cells: &std::collections::BTreeMap<(usize, usize), f64>,
+    cells: &std::collections::BTreeMap<(usize, usize), (f64, Shade)>,
     bar_of: &[Option<usize>],
     bars: usize,
     mut names: Vec<Option<String>>,
-    shades: &[Shade],
     coloured: bool,
     by_label: bool,
 ) -> (Vec<(String, Rgba)>, Vec<Vec<f64>>, usize, usize, usize) {
     // The map is read in its own order, so an Other stretch is always the same sum.
-    let shown = || cells.iter().filter_map(|((g, k), t)| Some((bar_of.get(*g).copied().flatten()?, *k, *t)));
+    let shown = || cells.iter().filter_map(|((g, k), (t, shade))| Some((bar_of.get(*g).copied().flatten()?, *k, *t, *shade)));
     let mut totals: Vec<Option<f64>> = vec![None; names.len()];
-    for (_, k, t) in shown() {
-        if let Some(s) = totals.get_mut(k) {
+    let mut shades = vec![Shade::Unread; names.len()];
+    for (_, k, t, shade) in shown() {
+        if let (Some(s), Some(c)) = (totals.get_mut(k), shades.get_mut(k)) {
             // A sum past a number's range orders its value as none.
             *s = Some(s.unwrap_or(0.0) + if t.is_finite() { t } else { 0.0 });
+            c.merge(shade);
         }
     }
+    // The key keeps the values with the largest totals, ordered by label once kept.
     let mut by_total: Vec<(f64, usize)> = totals.iter().enumerate().filter_map(|(k, t)| t.map(|t| (t, k))).collect();
-    if by_label {
-        by_total.sort_by_cached_key(|(_, k)| names.get(*k).and_then(|n| n.as_deref()).unwrap_or(CHART_BLANK).to_lowercase());
-    } else {
-        by_total.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    }
+    by_total.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     let own = if by_total.len() > CHART_STACKS { CHART_STACKS - 1 } else { by_total.len() };
+    if let Some(kept) = by_label.then(|| by_total.get_mut(..own)).flatten() {
+        kept.sort_by_cached_key(|(_, k)| names.get(*k).and_then(|n| n.as_deref()).unwrap_or(CHART_BLANK).to_lowercase());
+    }
     let mut key_of = vec![own; names.len()];
     let (mut key, mut kept) = (Vec::with_capacity(own + 1), 0);
     for (at, (_, k)) in by_total.iter().take(own).enumerate() {
@@ -1963,7 +1976,7 @@ fn stack_bars(
         key.push((CHART_OTHER.to_string(), crate::symbology::OTHER_FILL));
     }
     let mut stretches = vec![vec![0.0; key.len()]; bars];
-    for (bar, k, t) in shown() {
+    for (bar, k, t, _) in shown() {
         if let Some(s) = key_of.get(k).and_then(|at| stretches.get_mut(bar)?.get_mut(*at)) {
             *s += t;
         }
@@ -3020,25 +3033,20 @@ mod tests {
         let names = || vec![Some("x".to_string()), Some("y".to_string())];
         // Bar 0: x = 1e308 twice, past the range, y = -1e308. Bar 1, Other of groups 1 and 2,
         // each with an x of 1e308 and group 1 a y of -1e308: x adds up past it once merged.
-        let cells = std::collections::BTreeMap::from([
-            ((0, 0), f64::INFINITY),
-            ((0, 1), -1e308),
-            ((1, 0), 1e308),
-            ((1, 1), -1e308),
-            ((2, 0), 1e308),
-            ((3, 0), 2.0),
-            ((3, 1), 1.0),
-        ]);
+        let cells =
+            |c: &[((usize, usize), f64)]| c.iter().map(|(p, v)| (*p, (*v, Shade::Unread))).collect::<std::collections::BTreeMap<_, _>>();
+        let pairs =
+            [((0, 0), f64::INFINITY), ((0, 1), -1e308), ((1, 0), 1e308), ((1, 1), -1e308), ((2, 0), 1e308), ((3, 0), 2.0), ((3, 1), 1.0)];
         let bar_of = [Some(0), Some(1), Some(1), Some(2)];
-        let (key, stretches, _, _, whole) = stack_bars(&cells, &bar_of, 3, names(), &[], false, true);
+        let (key, stretches, _, _, whole) = stack_bars(&cells(&pairs), &bar_of, 3, names(), false, true);
         assert_eq!(key.len(), 2);
         assert_eq!(stretches, vec![Vec::new(), Vec::new(), vec![2.0, 1.0]]);
         assert_eq!(whole, 2);
         // Each stretch within the range, x and y above zero adding up past it once stacked, the
         // bar's total (z below zero) still within it.
         let names = vec![Some("x".to_string()), Some("y".to_string()), Some("z".to_string())];
-        let cells = std::collections::BTreeMap::from([((0, 0), 1e308), ((0, 1), 1e308), ((0, 2), -1e308)]);
-        let (_, stretches, _, _, whole) = stack_bars(&cells, &[Some(0)], 1, names, &[], false, true);
+        let pairs = [((0, 0), 1e308), ((0, 1), 1e308), ((0, 2), -1e308)];
+        let (_, stretches, _, _, whole) = stack_bars(&cells(&pairs), &[Some(0)], 1, names, false, true);
         assert_eq!((stretches, whole), (vec![Vec::new()], 1));
     }
 
@@ -3068,10 +3076,23 @@ mod tests {
                 .key_gathered,
             0
         );
+        // By label, the key still keeps the largest values, ordered A to Z once kept.
+        let mut ds = Dataset::new(
+            "t",
+            rustgis_data::GeometryType::Point,
+            vec![Field::new("region", FieldType::Text), Field::new("kind", FieldType::Integer), Field::new("people", FieldType::Double)],
+        );
+        for k in 0..10 {
+            ds.push(None, vec![Value::Text("A".into()), Value::Int(k), Value::Float(k as f64 + 1.0)]);
+        }
+        let d =
+            chart(serde_json::json!({"field": "people", "group": "region", "stack": "kind", "order": "category"})).chart_data(&ds).unwrap();
+        assert_eq!(key(&d), vec!["3", "4", "5", "6", "7", "8", "9", CHART_OTHER]);
+        assert_eq!(d.stretches, vec![vec![4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 6.0]]);
     }
 
-    /// Stacked and coloured by classes, each value of the key takes the colour all its features
-    /// share on the map; one whose features have several, or show none, keeps its palette colour
+    /// Stacked and coloured by classes, each value of the key takes the colour all its features on
+    /// the bars shown share on the map; one whose features have several, or show none, keeps its palette colour
     /// and is counted. The bars hold no colours of their own.
     #[test]
     fn stacked_bars_colour_their_key_by_classes() {
@@ -3098,6 +3119,26 @@ mod tests {
         let d = kind.chart_data_with(&ds, Some(&|_| None)).unwrap();
         assert_eq!(d.key.iter().map(|k| k.1).collect::<Vec<_>>(), palette[..3].to_vec());
         assert_eq!(d.key_kept, 3);
+        // A value's colour is read over the bars shown: x red on A's bar, blue on B's left out,
+        // and mixed once B is gathered in an Other bar.
+        use rustgis_data::{Dataset, Field, FieldType, Value};
+        let mut ds = Dataset::new(
+            "t",
+            rustgis_data::GeometryType::Point,
+            vec![Field::new("region", FieldType::Text), Field::new("kind", FieldType::Text), Field::new("people", FieldType::Double)],
+        );
+        ds.push(None, vec![Value::Text("A".into()), Value::Text("x".into()), Value::Float(10.0)]);
+        ds.push(None, vec![Value::Text("B".into()), Value::Text("x".into()), Value::Float(1.0)]);
+        let by_region = |row: usize| Some(if row == 0 { red } else { blue });
+        let one = |other: bool| {
+            chart(serde_json::json!({"field": "people", "group": "region", "stack": "kind", "classes": true, "bars": 1, "other": other}))
+                .chart_data_with(&ds, Some(&by_region))
+                .unwrap()
+        };
+        let d = one(false);
+        assert_eq!((d.key.iter().map(|k| k.1).collect::<Vec<_>>(), d.key_kept), (vec![red], 0));
+        let d = one(true);
+        assert_eq!((d.key.iter().map(|k| k.1).collect::<Vec<_>>(), d.key_kept), (vec![palette[0]], 1));
     }
 
     /// Ungrouped, a bar per feature with a number, largest first, labelled by its field; the

@@ -3593,7 +3593,10 @@ fn add_element(s: &mut Session, p: &Value) -> CmdResult {
             let layer = frame_layer_name(s, l, frame, p)?;
             let ds = frame_dataset(s, l, frame, &layer).ok_or("no such layer")?;
             let mut o = chart_options(p, ChartOptions::default(), ds)?;
-            chart_stack(p, &mut o)?;
+            // A new chart's stack is the one given, so one it can't draw is refused, never let go.
+            if let Some(said) = chart_stack(p, &mut o)? {
+                return Err(said);
+            }
             // Not given: the first numeric field, or for a count the field it groups by.
             let field = match ps(p, "field") {
                 Some(fl) => ds.field_index(fl).and_then(|i| ds.fields.get(i)).ok_or_else(|| format!("no field '{fl}'"))?,
@@ -4418,7 +4421,7 @@ fn say_chart_losses(s: &mut Session, li: usize, id: u32) {
             let n = data.whole;
             let (plural, is, its) = if n == 1 { ("", "is", "its") } else { ("s", "are", "their") };
             said.push(format!(
-                "{n} bar{plural} of the chart {is} drawn whole, not stacked: a stretch of {its} adds up past the largest number"
+                "{n} bar{plural} of the chart {is} drawn whole, not stacked: {its} stretches add up past the largest number"
             ));
         }
         said

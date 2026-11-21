@@ -39931,7 +39931,7 @@ fn a_stacked_charts_key_says_the_values_it_gathers() {
     s.map_mut().add_dataset(ds);
     let mark = s.notice_mark();
     s.run("layout.addElement", &json!({"kind": "chart", "layer": "Big", "field": "n", "group": "region", "stack": "kind"})).unwrap();
-    let text = "1 bar of the chart is drawn whole, not stacked: a stretch of its adds up past the largest number";
+    let text = "1 bar of the chart is drawn whole, not stacked: its stretches add up past the largest number";
     assert!(said(&s, mark).iter().any(|t| t == text), "{:?}", said(&s, mark));
 }
 

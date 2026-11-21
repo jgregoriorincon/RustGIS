@@ -3744,8 +3744,8 @@ fn reach(stretches: &[f64]) -> (f64, f64) {
 }
 
 /// A stacked chart's key from `top`: a swatch in each value's colour and its name, in rows as
-/// wide as the box, a name cut to fit one; the height it takes, 0 without a key. Without a canvas
-/// it only measures.
+/// wide as the box, a name cut to fit one; the height it takes, 0 without a key, infinite in a
+/// box narrower than a swatch. Without a canvas it only measures.
 fn chart_key(mut pm: Option<&mut Canvas>, r: Rect, top: f32, key: &[(String, Rgba)], px: f32, ppp: f32, dark: Rgba) -> f32 {
     if key.is_empty() {
         return 0.0;
@@ -3753,6 +3753,10 @@ fn chart_key(mut pm: Option<&mut Canvas>, r: Rect, top: f32, key: &[(String, Rgb
     let size = px * 0.9;
     let line_h = px * 1.4;
     let (sw, gap) = (size * 0.8, 2.0 * ppp);
+    // A box narrower than a swatch has no room for the key at all.
+    if r.width() < sw + gap {
+        return f32::INFINITY;
+    }
     let (mut x, mut y) = (r.x(), top);
     for (name, colour) in key {
         let t = fit_label(name, |t| sw + gap + text::measure(t, size / 1.33, false) > r.width());
@@ -4169,6 +4173,10 @@ mod tests {
             assert!(is(&c, 100, 50, Rgba::rgb(0xF0, 0xF1, 0xF3)) && !is(&c, 5, 50, red), "the placeholder");
             assert!(c.pixmap().pixel(5, 90).is_some_and(|p| p.alpha() == 0), "nothing under the box");
         }
+        // A box narrower than a swatch draws the placeholder too, nothing past its right.
+        let mut c = Canvas::new(200, 120).unwrap();
+        chart(&mut c, Rect::from_xywh(0.0, 0.0, 5.0, 120.0).unwrap(), &stacked(vec![6.0, 4.0]), &ChartLook::default(), INK, 1.0, false);
+        assert!(is(&c, 2, 60, Rgba::rgb(0xF0, 0xF1, 0xF3)) && (6..20).all(|x| c.pixmap().pixel(x, 7).is_some_and(|p| p.alpha() == 0)));
     }
 
     fn bar_blue(c: &Canvas, x: u32, y: u32) -> bool {
