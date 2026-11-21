@@ -1326,6 +1326,9 @@ pub struct ChartData {
     pub key_kept: usize,
     /// Stacked, the values the bars drawn show past [`CHART_STACKS`], gathered in the key's Other.
     pub key_gathered: usize,
+    /// Stacked, the bars drawn whole (their `stretches` empty): a stretch of theirs adds up past a
+    /// number's range, though their total doesn't.
+    pub whole: usize,
 }
 
 /// The most values of a stack field a chart's key lists, one per colour of
@@ -1666,8 +1669,8 @@ impl ElementKind {
             }
         }
         // Stacked, the key and each bar's stretches, an Other bar's from the groups it gathers.
-        let (key, stretches, key_kept, key_gathered) = match si {
-            None => (Vec::new(), Vec::new(), 0, 0),
+        let (key, stretches, key_kept, key_gathered, whole) = match si {
+            None => (Vec::new(), Vec::new(), 0, 0, 0),
             Some(_) => {
                 let mut bar_of = vec![None; groups.len()];
                 for (bar, (_, g)) in drawn.iter().enumerate() {
@@ -1729,6 +1732,7 @@ impl ElementKind {
             stretches,
             key_kept,
             key_gathered,
+            whole,
         })
     }
 
@@ -1781,10 +1785,10 @@ impl ElementKind {
         }
     }
 
-    /// Whether a chart has a stack field, which a chart had no way to before #2487 part 3b: an
-    /// older reader would draw its bars whole, and save it again without.
+    /// Whether a chart has a stack field (a blank one stacks nothing), which a chart had no way to
+    /// before #2487 part 3b: an older reader would draw its bars whole, and save it again without.
     pub fn chart_uses_stack(&self) -> bool {
-        matches!(self, ElementKind::Chart { stack: Some(_), .. })
+        matches!(self, ElementKind::Chart { stack: Some(s), .. } if !s.trim().is_empty())
     }
 
     /// How a chart draws its bars; `None` for another kind.
@@ -1909,7 +1913,8 @@ pub fn chart_stack_refusal(group: Option<&str>, statistic: StatKind, stack: &str
 /// one's features share (`shades`, read when `coloured`). The key holds the values the bars show,
 /// by their total over them, largest first (A to Z `by_label`); past [`CHART_STACKS`], all but the
 /// last and an Other for the rest. Returns the key, each bar's stretches by the key's order, the
-/// values of the key keeping their palette colour though coloured, and the values gathered.
+/// values of the key keeping their palette colour though coloured, the values gathered, and the
+/// bars drawn whole (their stretches empty) as a stretch of theirs is past a number's range.
 fn stack_bars(
     cells: &std::collections::BTreeMap<(usize, usize), f64>,
     bar_of: &[Option<usize>],
@@ -1918,16 +1923,14 @@ fn stack_bars(
     shades: &[Shade],
     coloured: bool,
     by_label: bool,
-) -> (Vec<(String, Rgba)>, Vec<Vec<f64>>, usize, usize) {
-    // A pair's sum past a number's range adds nothing (its bar is then past it too, but for
-    // features of opposite signs near the largest number). The map is read in its own order,
-    // so an Other stretch is always the same sum.
-    let shown =
-        || cells.iter().filter_map(|((g, k), t)| Some((bar_of.get(*g).copied().flatten()?, *k, if t.is_finite() { *t } else { 0.0 })));
+) -> (Vec<(String, Rgba)>, Vec<Vec<f64>>, usize, usize, usize) {
+    // The map is read in its own order, so an Other stretch is always the same sum.
+    let shown = || cells.iter().filter_map(|((g, k), t)| Some((bar_of.get(*g).copied().flatten()?, *k, *t)));
     let mut totals: Vec<Option<f64>> = vec![None; names.len()];
     for (_, k, t) in shown() {
         if let Some(s) = totals.get_mut(k) {
-            *s = Some(s.unwrap_or(0.0) + t);
+            // A sum past a number's range orders its value as none.
+            *s = Some(s.unwrap_or(0.0) + if t.is_finite() { t } else { 0.0 });
         }
     }
     let mut by_total: Vec<(f64, usize)> = totals.iter().enumerate().filter_map(|(k, t)| t.map(|t| (t, k))).collect();
@@ -1965,7 +1968,14 @@ fn stack_bars(
             *s += t;
         }
     }
-    (key, stretches, kept, gathered)
+    // A bar a stretch of which adds up past a number's range (features of opposite signs near the
+    // largest number, its total still within it) is drawn whole, with no stretches.
+    let mut whole = 0;
+    for s in stretches.iter_mut().filter(|s| s.iter().any(|v| !v.is_finite())) {
+        s.clear();
+        whole += 1;
+    }
+    (key, stretches, kept, gathered, whole)
 }
 
 /// A chart's group value looked up by itself rather than by its name ([`ElementKind::chart_data`]):
@@ -2987,14 +2997,38 @@ mod tests {
             serde_json::json!({"field": "people", "group": "region", "statistic": "mean", "stack": "kind"}),
             serde_json::json!({"field": "people", "group": "region", "stack": " "}),
         ] {
-            let kind = chart(flat);
-            assert!(kind.chart_uses_stack() && kind.chart_stack().is_none());
+            let kind = chart(flat.clone());
+            // A blank one doesn't ask a reader for stacking.
+            assert!(kind.chart_uses_stack() != (flat["stack"] == " ") && kind.chart_stack().is_none());
             let d = kind.chart_data(&ds).unwrap();
             assert!(d.key.is_empty() && d.stretches.is_empty());
         }
         assert!(summed.chart_uses_stack() && !chart(serde_json::json!({"field": "people"})).chart_uses_stack());
         // A stack field the layer hasn't draws no chart, as a group field it hasn't.
         assert!(chart(serde_json::json!({"field": "people", "group": "region", "stack": "gone"})).chart_data(&ds).is_none());
+    }
+
+    /// A bar a stretch of which adds up past a number's range, its total within it, is drawn whole
+    /// and counted, its stretches left empty rather than that one taken as 0; the others stack.
+    #[test]
+    fn a_stretch_past_a_numbers_range_leaves_its_bar_whole() {
+        let names = || vec![Some("x".to_string()), Some("y".to_string())];
+        // Bar 0: x = 1e308 twice, past the range, y = -1e308. Bar 1, Other of groups 1 and 2,
+        // each with an x of 1e308 and group 1 a y of -1e308: x adds up past it once merged.
+        let cells = std::collections::BTreeMap::from([
+            ((0, 0), f64::INFINITY),
+            ((0, 1), -1e308),
+            ((1, 0), 1e308),
+            ((1, 1), -1e308),
+            ((2, 0), 1e308),
+            ((3, 0), 2.0),
+            ((3, 1), 1.0),
+        ]);
+        let bar_of = [Some(0), Some(1), Some(1), Some(2)];
+        let (key, stretches, _, _, whole) = stack_bars(&cells, &bar_of, 3, names(), &[], false, true);
+        assert_eq!(key.len(), 2);
+        assert_eq!(stretches, vec![Vec::new(), Vec::new(), vec![2.0, 1.0]]);
+        assert_eq!(whole, 2);
     }
 
     /// Past the palette's colours, the key keeps all but the last of the values with the largest

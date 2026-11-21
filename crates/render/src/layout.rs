@@ -3691,7 +3691,7 @@ fn chart(pm: &mut Canvas, r: Rect, data: &rustgis_map::layout::ChartData, look: 
     let (min, max) = vals
         .iter()
         .enumerate()
-        .map(|(i, (v, _))| data.stretches.get(i).map_or_else(|| reach(&[*v]), |s| reach(s)))
+        .map(|(i, (v, _))| data.stretches.get(i).filter(|s| !s.is_empty()).map_or_else(|| reach(&[*v]), |s| reach(s)))
         .fold((0.0_f64, 0.0_f64), |(lo, hi), (l, h)| (lo.min(l), hi.max(h)));
     if vals.is_empty() || (max <= 0.0 && min >= 0.0) {
         placeholder(pm, r, "Chart", ppp as f64);
@@ -3700,10 +3700,17 @@ fn chart(pm: &mut Canvas, r: Rect, data: &rustgis_map::layout::ChartData, look: 
     let px = 7.5 * 1.33 * ppp;
     // No title leaves its room to the bars.
     let title_h = if data.title.is_empty() { 0.0 } else { px * 1.6 };
+    // A box too short to leave the bars a line under its title and key draws none of them rather
+    // than a key past its bottom and bars with no room.
+    let key_h = chart_key(None, r, 0.0, &data.key, px, ppp, dark);
+    if title_h + key_h + px * 1.4 > r.height() {
+        placeholder(pm, r, "Chart", ppp as f64);
+        return;
+    }
     if !data.title.is_empty() {
         text::text_at(pm, &data.title, r.x(), r.y() + title_h / 2.0, px * 1.15, dark, true, text::Align::Left, false);
     }
-    let key_h = chart_key(pm, r, r.y() + title_h, &data.key, px, ppp, dark);
+    chart_key(Some(pm), r, r.y() + title_h, &data.key, px, ppp, dark);
     // Each bar's value as written past its end, when it has them.
     let values: Vec<String> = if look.values {
         vals.iter().map(|(v, _)| decimal(rustgis_map::layout::chart_value_text(*v, look.decimals), comma)).collect()
@@ -3737,8 +3744,9 @@ fn reach(stretches: &[f64]) -> (f64, f64) {
 }
 
 /// A stacked chart's key from `top`: a swatch in each value's colour and its name, in rows as
-/// wide as the box, a name cut to fit one; the height it takes, 0 without a key.
-fn chart_key(pm: &mut Canvas, r: Rect, top: f32, key: &[(String, Rgba)], px: f32, ppp: f32, dark: Rgba) -> f32 {
+/// wide as the box, a name cut to fit one; the height it takes, 0 without a key. Without a canvas
+/// it only measures.
+fn chart_key(mut pm: Option<&mut Canvas>, r: Rect, top: f32, key: &[(String, Rgba)], px: f32, ppp: f32, dark: Rgba) -> f32 {
     if key.is_empty() {
         return 0.0;
     }
@@ -3753,8 +3761,10 @@ fn chart_key(pm: &mut Canvas, r: Rect, top: f32, key: &[(String, Rgba)], px: f32
         if x > r.x() && x + w > r.right() {
             (x, y) = (r.x(), y + line_h);
         }
-        fill(pm, *colour, x, y + (line_h - sw) / 2.0, sw, sw);
-        text::text_at(pm, &t, x + sw + gap, y + line_h / 2.0, size, dark, false, text::Align::Left, false);
+        if let Some(pm) = pm.as_deref_mut() {
+            fill(pm, *colour, x, y + (line_h - sw) / 2.0, sw, sw);
+            text::text_at(pm, &t, x + sw + gap, y + line_h / 2.0, size, dark, false, text::Align::Left, false);
+        }
         x += w + 3.0 * gap;
     }
     y + line_h - top
@@ -3792,11 +3802,11 @@ struct ChartBars<'a> {
 impl ChartBars<'_> {
     /// Bar `i` (of value `v`) as the stretches it is drawn in, each with the share of the span
     /// ([`ChartBars::share`]) where it starts from zero, its own share (negative running back) and
-    /// its colour. A whole bar is one stretch, in its own colour or the look's; a stacked one a
-    /// stretch per value of the key, those above zero on from it and those below back from it, one
-    /// of 0 not drawn.
+    /// its colour. A whole bar (none stacked, or no stretches) is one stretch, in its own colour or
+    /// the look's; a stacked one a stretch per value of the key, those above zero on from it and
+    /// those below back from it, one of 0 not drawn.
     fn stretches(&self, i: usize, v: f64) -> Vec<(f32, f32, Rgba)> {
-        let Some(s) = self.stretches.get(i) else {
+        let Some(s) = self.stretches.get(i).filter(|s| !s.is_empty()) else {
             return vec![(0.0, self.share(v), self.colors.get(i).copied().flatten().unwrap_or(self.look.bar_color))];
         };
         let (mut lo, mut hi) = (0.0_f64, 0.0_f64);
@@ -4142,6 +4152,23 @@ mod tests {
         // A negative stretch runs back from zero: 2 of a span of 8 left of it, 6 right.
         let c = draw(&stacked(vec![6.0, -2.0]), Orientation::Horizontal);
         assert!(is(&c, 20, 23, green) && is(&c, 100, 23, red), "either way from zero");
+        // A bar with no stretches (they add up past the largest number) is drawn whole.
+        let mut whole = stacked(vec![6.0, 4.0]);
+        whole.stretches = vec![Vec::new()];
+        let c = draw(&whole, Orientation::Horizontal);
+        assert!(is(&c, 50, 23, ChartLook::default().bar_color) && is(&c, 150, 23, ChartLook::default().bar_color), "whole");
+        // A key of a row a value, taller than a short box leaves the bars, draws neither: the
+        // placeholder instead, nothing past the box.
+        let mut long = stacked(vec![6.0, 4.0]);
+        long.key = (0..8).map(|k| (format!("{k} a value with a long name to fill a row"), red)).collect();
+        long.stretches = vec![vec![1.0; 8]];
+        for orientation in [Orientation::Horizontal, Orientation::Vertical] {
+            let mut c = Canvas::new(200, 120).unwrap();
+            let look = ChartLook { orientation, ..ChartLook::default() };
+            chart(&mut c, Rect::from_xywh(0.0, 0.0, 200.0, 60.0).unwrap(), &long, &look, INK, 1.0, false);
+            assert!(is(&c, 100, 50, Rgba::rgb(0xF0, 0xF1, 0xF3)) && !is(&c, 5, 50, red), "the placeholder");
+            assert!(c.pixmap().pixel(5, 90).is_some_and(|p| p.alpha() == 0), "nothing under the box");
+        }
     }
 
     fn bar_blue(c: &Canvas, x: u32, y: u32) -> bool {

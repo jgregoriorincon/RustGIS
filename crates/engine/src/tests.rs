@@ -39887,7 +39887,6 @@ fn layout_charts_take_a_look() {
     assert!(s.run("layout.update", &json!({"element": chart, "group": "name"})).is_err());
 }
 
-/// A chart coloured by its layer's classes (#2487 part 3): grouped by the field the layer's Unique
 /// A stack field with more values than the key has colours gathers the rest in its Other, and
 /// the chart says how many (#2487 part 3b); one that fits says nothing.
 #[test]
@@ -40017,6 +40016,7 @@ fn layout_charts_stack_by_a_second_field() {
     assert!(!saved(&s).contains("\"stack\""), "{}", saved(&s));
 }
 
+/// A chart coloured by its layer's classes (#2487 part 3): grouped by the field the layer's Unique
 /// Values class by, each bar takes its class's colour, and follows the symbology when it
 /// changes; grouped otherwise, a bar whose features are in several classes keeps the bar colour,
 /// which a warning counts, on `layout.addElement` and on `layout.update` alike. `classes` is

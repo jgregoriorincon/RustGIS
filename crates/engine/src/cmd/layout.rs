@@ -4414,6 +4414,13 @@ fn say_chart_losses(s: &mut Session, li: usize, id: u32) {
                 "{n} value{plural} of the chart's key {keep} {its} palette colour: {its} features have several colours on the map, or show none"
             ));
         }
+        if data.whole > 0 {
+            let n = data.whole;
+            let (plural, is, its) = if n == 1 { ("", "is", "its") } else { ("s", "are", "their") };
+            said.push(format!(
+                "{n} bar{plural} of the chart {is} drawn whole, not stacked: a stretch of {its} adds up past the largest number"
+            ));
+        }
         said
     };
     for w in said {
