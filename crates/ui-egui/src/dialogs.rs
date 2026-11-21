@@ -2425,7 +2425,7 @@ pub(crate) fn buttons_enabled(
     f: impl FnOnce(&mut RustGisApp) -> Result<(), String>,
 ) -> bool {
     let mut close = false;
-    // Called every frame, Enter or not: it records this frame's focus for the next one's Enter.
+    // Called every frame, Enter or not: a dialog's first frame sets up what it reads.
     let ours = enter_is_the_dialogs(ui);
     let enter = ours && ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift);
     ui.add_space(4.0);
@@ -2445,22 +2445,46 @@ pub(crate) fn buttons_enabled(
     close
 }
 
-/// Whether an Enter pressed this frame is the dialog's (drawn in `ui`) to run it: nothing has the
-/// keyboard focus, or one of the dialog's own text boxes has it (#2599). Enter on a focused button,
-/// drop-down or check box is that widget's click (egui takes it so), so Cancel cancels and a field
-/// button adds its field without the dialog running too; nor does a box in another pane (dialogs
-/// aren't modal) run it. A one-line box gives up the focus in the frame it takes Enter, before
-/// this runs, so with none now the one focused last frame is judged: this records the focus each
-/// frame for that (one key for every dialog, as one shows at a time).
+/// Whether an Enter pressed this frame is the dialog's (drawn in `ui`) to run it: nothing had the
+/// keyboard focus as the frame began, or one of the dialog's own text boxes had it (#2599). Enter
+/// on a focused button, drop-down or check box is that widget's click (egui takes it so), so
+/// Cancel cancels and a field button adds its field without the dialog running too; nor does a
+/// box in another pane (dialogs aren't modal) run it. The focus as the frame began, not now: a
+/// one-line box gives it up in the frame it takes Enter, before this runs, and a Shift+Tab into a
+/// box moves it only as the next frame begins.
 fn enter_is_the_dialogs(ui: &egui::Ui) -> bool {
     let ctx = ui.ctx();
-    let key = egui::Id::unique("dialog_enter_focus");
-    let now = ctx.memory(|m| m.focused());
-    let before = ctx.data_mut(|d| std::mem::replace(d.get_temp_mut_or_default::<Option<egui::Id>>(key), now));
-    // Kept by a dialog's last frame, maybe long ago: only a focus it lost this frame counts.
-    let before = before.filter(|&id| ctx.memory(|m| m.had_focus_last_frame(id)));
-    let Some(id) = now.or(before) else { return true };
+    let start = ctx.data(|d| d.get_temp::<FocusAtStart>(focus_at_start_key()));
+    // Set up on the first dialog's first frame (once: egui adds a plugin type once); until its
+    // first pass, the focus now stands in.
+    if start.is_none() {
+        ctx.add_plugin(FocusAtPassStart);
+    }
+    let Some(id) = start.map_or_else(|| ctx.memory(|m| m.focused()), |s| s.0) else { return true };
     egui::text_edit::TextEditState::load(ctx, id).is_some() && ctx.read_response(id).is_some_and(|r| r.layer_id == ui.layer_id())
+}
+
+/// The widget that had the keyboard focus as the pass began, before any widget took its keys.
+#[derive(Clone, Copy)]
+struct FocusAtStart(Option<egui::Id>);
+
+fn focus_at_start_key() -> egui::Id {
+    egui::Id::unique("dialog_focus_at_pass_start")
+}
+
+/// Records [`FocusAtStart`] as every pass begins: egui runs a plugin's `on_begin_pass` after its
+/// own focus bookkeeping (a Shift+Tab's move applied), before the pass's widgets.
+struct FocusAtPassStart;
+
+impl egui::plugin::Plugin for FocusAtPassStart {
+    fn debug_name(&self) -> &'static str {
+        "FocusAtPassStart"
+    }
+
+    fn on_begin_pass(&mut self, ui: &mut egui::Ui) {
+        let focused = ui.ctx().memory(|m| m.focused());
+        ui.ctx().data_mut(|d| d.insert_temp(focus_at_start_key(), FocusAtStart(focused)));
+    }
 }
 
 /// Adds `word` to the end of the clause `text`, set apart from what the clause ends with, so a
@@ -3336,6 +3360,49 @@ mod tests {
         h.key_press(egui::Key::Enter);
         h.run();
         assert_eq!(h.state().dialogs.open, None, "its own box's Enter ran it");
+        assert_eq!(h.state().session.map().layer(id).unwrap().name, "Renamed");
+    }
+
+    /// Enter on a focused drop-down opens it, and the dialog doesn't run (#2599).
+    #[test]
+    fn enter_on_a_drop_down_opens_it_only() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        let mut h = sba_ready();
+        h.get_by_role_and_label(Role::ComboBox, "Selection Type").focus();
+        h.run();
+        h.key_press(egui::Key::Enter);
+        h.run();
+        assert!(h.query_by_label("Add To Current Selection").is_some(), "the drop-down opened");
+        assert_eq!(h.state().dialogs.open, Some("selectByAttributes"), "the dialog is still open");
+        assert_eq!(selected(h.state()), 0, "and didn't run");
+    }
+
+    /// Shift+Tab from Rename's button into its box moves the focus as the next frame begins; Enter
+    /// in that very frame, the box taking it, runs the dialog.
+    #[test]
+    fn enter_right_after_shift_tab_into_the_box_runs_the_dialog() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        let mut app = RustGisApp::with_sample();
+        let id = app.session.map().layers.first().map(|l| l.id).unwrap();
+        app.run("layer.select", json!({"layer": id})).unwrap();
+        app.run("ui.dialog", json!({"name": "renameLayer"})).unwrap();
+        app.dialogs.text = "Renamed".into();
+        let mut h = app_harness(app);
+        h.run_steps(3);
+        h.get_by_role_and_label(Role::Button, "Rename").focus();
+        h.run();
+        // Two passes in a row, by hand: the harness runs one more between its steps, by which the
+        // focus has moved already.
+        let ctx = h.ctx.clone();
+        let screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(1200.0, 900.0)));
+        let key = |key, modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
+        for event in [key(egui::Key::Tab, egui::Modifiers::SHIFT), key(egui::Key::Enter, egui::Modifiers::NONE)] {
+            let input = egui::RawInput { screen_rect, events: vec![event], ..Default::default() };
+            let _ = ctx.run_ui(input, |ui| super::show(h.state_mut(), ui.ctx()));
+        }
+        assert_eq!(h.state().dialogs.open, None, "the box's Enter ran it");
         assert_eq!(h.state().session.map().layer(id).unwrap().name, "Renamed");
     }
 
