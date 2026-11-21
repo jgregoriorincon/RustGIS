@@ -3698,15 +3698,10 @@ fn chart(pm: &mut Canvas, r: Rect, data: &rustgis_map::layout::ChartData, look: 
         return;
     }
     let px = 7.5 * 1.33 * ppp;
-    // No title leaves its room to the bars.
-    let title_h = if data.title.is_empty() { 0.0 } else { px * 1.6 };
-    // Stacked, a box too short to leave the bars a line under its title and key draws none of them
-    // rather than a key past its bottom and bars with no room. Not stacked, it draws as before.
-    let key_h = chart_key(None, r, 0.0, &data.key, px, ppp, dark);
-    if !data.key.is_empty() && title_h + key_h + px * 1.4 > r.height() {
+    let Some((title_h, key_h)) = chart_head(r, data, px, ppp) else {
         placeholder(pm, r, "Chart", ppp as f64);
         return;
-    }
+    };
     if !data.title.is_empty() {
         text::text_at(pm, &data.title, r.x(), r.y() + title_h / 2.0, px * 1.15, dark, true, text::Align::Left, false);
     }
@@ -3736,6 +3731,24 @@ fn chart(pm: &mut Canvas, r: Rect, data: &rustgis_map::layout::ChartData, look: 
         Orientation::Horizontal => bars.across(pm, data.labelled),
         Orientation::Vertical => bars.columns(pm, data.labelled),
     }
+}
+
+/// The heights of a chart's title and key over its bars in `r`, its text `px` high: no title
+/// leaves its room to the bars. Stacked, a box too short to leave the bars a line under its title
+/// and key has none (it draws its placeholder rather than a key past its bottom and bars with no
+/// room); not stacked, it draws as before.
+fn chart_head(r: Rect, data: &rustgis_map::layout::ChartData, px: f32, ppp: f32) -> Option<(f32, f32)> {
+    let title_h = if data.title.is_empty() { 0.0 } else { px * 1.6 };
+    let key_h = chart_key(None, r, 0.0, &data.key, px, ppp, INK);
+    (data.key.is_empty() || title_h + key_h + px * 1.4 <= r.height()).then_some((title_h, key_h))
+}
+
+/// Whether a chart with bars to draw, `w` × `h` mm, draws its placeholder instead as its title and
+/// key leave the bars no room ([`chart_head`]): what the commands warn of, so the page and they
+/// never tell it apart.
+pub fn chart_crowded(data: &rustgis_map::layout::ChartData, w: f64, h: f64) -> bool {
+    let Some(r) = Rect::from_xywh(0.0, 0.0, (w * PT_PER_MM).max(1.0) as f32, (h * PT_PER_MM).max(1.0) as f32) else { return false };
+    !data.bars.is_empty() && chart_head(r, data, 7.5 * 1.33, 1.0).is_none()
 }
 
 /// How far a bar's stretches reach below zero (its negative ones added up) and above it.

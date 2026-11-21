@@ -557,9 +557,11 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   colour; a value whose features have several colours, or show none, keeps its palette colour,
   and the chart says how many do. Stretches below zero run the other way from the zero line, and
   **Values** writes the bar's total. An Other bar is stacked too, from the bars it gathers. A
-  box too short to leave the bars room under the title and key shows the chart's placeholder:
-  make it taller. Turning grouping off, taking a mean, minimum or maximum, or moving the chart
-  to a layer without the field lets the stack go, and the chart says so. From a command:
+  box too short to leave the bars room under the title and key shows the chart's placeholder,
+  and the chart says so: make it taller. A stack field deleted from the layer leaves the bars
+  whole, and the chart's next change lets the stack go, saying so. Turning grouping off, taking
+  a mean, minimum or maximum, or moving the chart to a layer without the field lets the stack
+  go, and the chart says so. From a command:
   `layout.update={"element":6,"group":"continent","stack":"income_grp"}`, and `"stack":""` for
   whole bars again; `layout.addElement` takes it too.
 - **Rulers and guides**: rulers start on along the top and left and show millimetres from the page's corner.

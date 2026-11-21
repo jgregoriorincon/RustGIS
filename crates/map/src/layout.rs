@@ -1329,6 +1329,8 @@ pub struct ChartData {
     /// Stacked, the bars drawn whole (their `stretches` empty): a stretch of theirs, or their
     /// stretches stacked, add up past a number's range, though their total doesn't.
     pub whole: usize,
+    /// Its stack field isn't in the layer (deleted since, say): its bars are drawn whole.
+    pub stack_gone: bool,
 }
 
 /// The most values of a stack field a chart's key lists, one per colour of
@@ -1529,11 +1531,10 @@ impl ElementKind {
             Some(g) => Some(ds.field_index(g)?),
             None => None,
         };
-        // Stacked only grouped by another field, summing or counting.
-        let si = match self.chart_stack() {
-            Some(st) => Some(ds.field_index(st)?),
-            None => None,
-        };
+        // Stacked only grouped by another field, summing or counting; a stack field the layer
+        // hasn't (deleted since, say) leaves the bars whole, which `stack_gone` says.
+        let si = self.chart_stack().and_then(|st| ds.field_index(st));
+        let stack_gone = self.chart_stack().is_some() && si.is_none();
         let number = |row: usize| ds.value(row, fi).as_f64().filter(|v| v.is_finite());
         let (mut no_number, mut out_of_range) = (0, 0);
         // Grouped, a tally per value of the group field, in the order the values first come, and
@@ -1729,6 +1730,7 @@ impl ElementKind {
             key_kept,
             key_gathered,
             whole,
+            stack_gone,
         })
     }
 
@@ -1905,7 +1907,7 @@ pub fn chart_stack_refusal(group: Option<&str>, statistic: StatKind, stack: &str
     match group {
         _ if stack.trim().is_empty() => Some("it names no field"),
         None => Some("it doesn't group its bars"),
-        Some(g) if g.eq_ignore_ascii_case(stack) => Some("it groups by that field"),
+        Some(g) if g.trim().eq_ignore_ascii_case(stack.trim()) => Some("it groups by that field"),
         Some(_) if !matches!(statistic, StatKind::Sum | StatKind::Count) => {
             Some("a mean, least or greatest of its stretches wouldn't add up to its bar")
         }
@@ -3017,6 +3019,7 @@ mod tests {
             serde_json::json!({"field": "people", "group": "region", "stack": "Region"}),
             serde_json::json!({"field": "people", "group": "region", "statistic": "mean", "stack": "kind"}),
             serde_json::json!({"field": "people", "group": "region", "stack": " "}),
+            serde_json::json!({"field": "people", "group": "region", "stack": "region "}),
         ] {
             let kind = chart(flat.clone());
             // A blank one doesn't ask a reader for stacking.
@@ -3025,8 +3028,10 @@ mod tests {
             assert!(d.key.is_empty() && d.stretches.is_empty());
         }
         assert!(summed.chart_uses_stack() && !chart(serde_json::json!({"field": "people"})).chart_uses_stack());
-        // A stack field the layer hasn't draws no chart, as a group field it hasn't.
-        assert!(chart(serde_json::json!({"field": "people", "group": "region", "stack": "gone"})).chart_data(&ds).is_none());
+        // A stack field the layer hasn't (deleted since, say) leaves the bars whole, and says so.
+        let gone = chart(serde_json::json!({"field": "people", "group": "region", "stack": "gone"})).chart_data(&ds).unwrap();
+        let whole = chart(serde_json::json!({"field": "people", "group": "region"})).chart_data(&ds).unwrap();
+        assert!(gone.stack_gone && gone.key.is_empty() && gone.stretches.is_empty() && gone.bars == whole.bars && !whole.stack_gone);
     }
 
     /// A bar a stretch of which adds up past a number's range, or whose stretches do once stacked,
