@@ -3759,7 +3759,7 @@ fn chart_head(r: Rect, data: &rustgis_map::layout::ChartData, look: &ChartLook, 
 }
 
 /// Whether a chart with bars to draw, `w` × `h` mm in its look, draws its placeholder instead as
-/// its title and key leave the bars no room ([`chart_head`]): what the commands warn of, so the page and they
+/// its title and key leave the bars no room ([`chart_head`]): what the commands warn of, so the page and the commands
 /// never tell it apart.
 pub fn chart_crowded(data: &rustgis_map::layout::ChartData, look: &ChartLook, w: f64, h: f64) -> bool {
     let Some(r) = Rect::from_xywh(0.0, 0.0, (w * PT_PER_MM).max(1.0) as f32, (h * PT_PER_MM).max(1.0) as f32) else { return false };

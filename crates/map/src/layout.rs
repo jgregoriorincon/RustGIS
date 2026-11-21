@@ -1578,9 +1578,9 @@ impl ElementKind {
                         };
                     if let Some(si) = si.filter(|_| counted) {
                         let pair = (at, stacks.slot(ds.value(row, si)));
-                        if run.as_ref().is_none_or(|(p, _)| *p != pair)
-                            && let Some((p, cell)) = run.replace((pair, (0.0, Shade::Unread)))
-                        {
+                        // Another pair ends the run: its total and colour go to its pair's cell.
+                        let same = run.as_ref().is_some_and(|(p, _)| *p == pair);
+                        if !same && let Some((p, cell)) = run.replace((pair, (0.0, Shade::Unread))) {
                             add_cell(&mut cells, p, cell);
                         }
                         if let Some((_, (total, shade))) = &mut run {

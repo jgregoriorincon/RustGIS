@@ -4360,8 +4360,7 @@ fn chart_update(
 /// gathered in its Other or keeping their palette colour. It reads each feature of the
 /// chart's layer once, on the command's thread, as drawing the chart does on every draw of the
 /// page: run only when a chart is added, told what to draw or coloured by classes, not when it
-/// is moved or styled; resized or retitled, a stacked chart reads it for [`say_chart_crowded`]
-/// alone.
+/// is moved; resized or restyled, a stacked chart reads it for [`say_chart_crowded`] alone.
 fn say_chart_losses(s: &mut Session, li: usize, id: u32) {
     say_chart(s, li, id, false);
 }
@@ -5270,9 +5269,9 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
             s.warn(said);
         }
         say_chart_losses(s, li, id);
-    } else if (gives(p, "w") || gives(p, "h") || p.get("title").is_some()) && is_chart(s, li, id) {
-        // Resized or retitled (`null` too, its given title back), it says only whether its bars
-        // still have room.
+    } else if (gives(p, "w") || gives(p, "h") || changes_chart_look(p)) && is_chart(s, li, id) {
+        // Resized, retitled (`null` too, its given title back) or given another look (columns,
+        // values), it says only whether its bars still have room.
         say_chart_crowded(s, li, id);
     }
     if emptied_colorbar {

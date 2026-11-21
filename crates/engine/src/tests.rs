@@ -39971,6 +39971,12 @@ fn a_stacked_chart_says_when_its_key_or_its_stack_field_leaves_it() {
     let mark = s.notice_mark();
     s.run("layout.update", &json!({"element": id, "h": 8})).unwrap();
     assert!(said(&s, mark).iter().any(|t| t == crowded), "resized: {:?}", said(&s, mark));
+    // Turned to columns, labelled and valued, a box with room across has none: the look says so.
+    s.run("layout.update", &json!({"element": id, "h": 16})).unwrap();
+    let mark = s.notice_mark();
+    s.run("layout.update", &json!({"element": id, "orientation": "vertical", "values": true})).unwrap();
+    assert!(said(&s, mark).iter().any(|t| t == crowded), "restyled: {:?}", said(&s, mark));
+    s.run("layout.update", &json!({"element": id, "orientation": "horizontal", "values": false})).unwrap();
     // Without a title it has room again; an unstacked chart never says it.
     let mark = s.notice_mark();
     s.run("layout.update", &json!({"element": id, "title": "", "h": 12})).unwrap();
