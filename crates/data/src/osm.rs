@@ -744,8 +744,9 @@ pub(crate) mod tests {
         out.extend_from_slice(&b);
     }
 
-    /// A small file: a tagged node, a road, a closed building, and a multipolygon with a hole made
-    /// of two outer half-rings and an inner ring.
+    /// A small file: a tagged node, a road, a closed building, the same footprint as a destroyed
+    /// building (`destroyed:building`), and a multipolygon with a hole made of two outer
+    /// half-rings and an inner ring.
     pub(crate) fn sample() -> Vec<u8> {
         let mut out = Vec::new();
         let mut header = Vec::new();
@@ -767,6 +768,7 @@ pub(crate) mod tests {
             "landuse",
             "forest",
             "amenity",
+            "destroyed:building",
         ];
         let mut st = Vec::new();
         for s in strings {
@@ -811,6 +813,7 @@ pub(crate) mod tests {
         field_bytes(2, &dense, &mut group);
         field_bytes(3, &way(100, &[1, 2, 3], &[s("highway")], &[s("residential")]), &mut group);
         field_bytes(3, &way(101, &[4, 5, 6, 7, 4], &[s("building")], &[s("yes")]), &mut group);
+        field_bytes(3, &way(106, &[4, 5, 6, 7, 4], &[s("destroyed:building")], &[s("yes")]), &mut group);
         field_bytes(3, &way(102, &[8, 9, 10], &[], &[]), &mut group);
         field_bytes(3, &way(103, &[10, 11, 8], &[], &[]), &mut group);
         // Tagged as its relation is (old-style): drawn as its part only.
@@ -849,7 +852,8 @@ pub(crate) mod tests {
         let Some(Geometry::Line(l)) = &lines.features[1].geometry else { panic!() };
         assert!((l[0][1].x - 2.5).abs() < 1e-7 && (l[0][1].y - 1.5).abs() < 1e-7, "{l:?}");
         assert!(looks_like_osm_pbf(&sample()) && !looks_like_osm_pbf(b"\x1a\x05water"));
-        assert_eq!(polys.features.len(), 2, "the building and the forest");
+        assert_eq!(polys.features.len(), 3, "the building, the destroyed building and the forest");
+        assert!(polys.features.iter().any(|f| f.attrs[0] == Value::Int(106)), "a lifecycle prefix keeps a footprint an area");
         let forest = polys.features.iter().find(|f| f.attrs[0] == Value::Int(200)).unwrap();
         assert!(matches!(&forest.geometry, Some(Geometry::Polygon(p)) if p.len() == 1 && p[0].len() == 2), "{:?}", forest.geometry);
         assert!(layers[0].1.messages.is_empty(), "{:?}", layers[0].1.messages);
