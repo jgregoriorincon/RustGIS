@@ -304,6 +304,8 @@ fn is_gpkg_target_error(error: &str) -> bool {
 
 /// Draws the active dialog and leaves it open on validation failure or a newly opened dialog.
 pub fn show(app: &mut RustGisApp, ctx: &egui::Context) {
+    // From the app's first frame, so a dialog's first frame has the focus it began with.
+    record_focus_at_pass_start(ctx);
     let Some(which) = app.dialogs.open else { return };
     if which == "calculateGeometry" {
         crate::geometrycalc::show(app, ctx);
@@ -375,6 +377,13 @@ pub fn show(app: &mut RustGisApp, ctx: &egui::Context) {
         state.set_open(true);
         state.store(ctx);
         app.dialogs.reset_collapse = false;
+        // Opened, it starts with nothing focused (#2599): the ribbon button or another pane's box
+        // that had the focus would otherwise keep Enter from running it, and take that Enter too.
+        ctx.memory_mut(|m| {
+            if let Some(id) = m.focused() {
+                m.surrender_focus(id);
+            }
+        });
     }
 
     let preferred_width = match which {
@@ -2425,9 +2434,7 @@ pub(crate) fn buttons_enabled(
     f: impl FnOnce(&mut RustGisApp) -> Result<(), String>,
 ) -> bool {
     let mut close = false;
-    // Called every frame, Enter or not: a dialog's first frame sets up what it reads.
-    let ours = enter_is_the_dialogs(ui);
-    let enter = ours && ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift);
+    let enter = ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift) && enter_is_the_dialogs(ui);
     ui.add_space(4.0);
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
         let t = Tokens::get(ui.ctx());
@@ -2454,13 +2461,10 @@ pub(crate) fn buttons_enabled(
 /// box moves it only as the next frame begins.
 fn enter_is_the_dialogs(ui: &egui::Ui) -> bool {
     let ctx = ui.ctx();
-    let start = ctx.data(|d| d.get_temp::<FocusAtStart>(focus_at_start_key()));
-    // Set up on the first dialog's first frame (once: egui adds a plugin type once); until its
-    // first pass, the focus now stands in.
-    if start.is_none() {
-        ctx.add_plugin(FocusAtPassStart);
-    }
-    let Some(id) = start.map_or_else(|| ctx.memory(|m| m.focused()), |s| s.0) else { return true };
+    // None only before the recorder's first pass (the app's first frame): no Enter of the dialog's
+    // then, as the focus it began with isn't known.
+    let Some(FocusAtStart(start)) = ctx.data(|d| d.get_temp::<FocusAtStart>(focus_at_start_key())) else { return false };
+    let Some(id) = start else { return true };
     egui::text_edit::TextEditState::load(ctx, id).is_some() && ctx.read_response(id).is_some_and(|r| r.layer_id == ui.layer_id())
 }
 
@@ -2470,6 +2474,14 @@ struct FocusAtStart(Option<egui::Id>);
 
 fn focus_at_start_key() -> egui::Id {
     egui::Id::unique("dialog_focus_at_pass_start")
+}
+
+/// Sets up [`FocusAtPassStart`], once (until its first pass records, egui adding a plugin type
+/// once); it records from the next pass on, as egui takes a pass's plugins as it begins.
+fn record_focus_at_pass_start(ctx: &egui::Context) {
+    if ctx.data(|d| d.get_temp::<FocusAtStart>(focus_at_start_key())).is_none() {
+        ctx.add_plugin(FocusAtPassStart);
+    }
 }
 
 /// Records [`FocusAtStart`] as every pass begins: egui runs a plugin's `on_begin_pass` after its
@@ -3363,6 +3375,80 @@ mod tests {
         assert_eq!(h.state().session.map().layer(id).unwrap().name, "Renamed");
     }
 
+    /// A dialog opened from the keyboard (Enter on a focused ribbon button) starts with nothing
+    /// focused: the next Enter runs it, rather than pressing the button again (#2599).
+    #[test]
+    fn a_dialog_opened_from_the_keyboard_takes_the_next_enter() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        let mut app = RustGisApp::with_sample();
+        let id = app.session.map().layers.first().map(|l| l.id).unwrap();
+        app.run("layer.select", json!({"layer": id})).unwrap();
+        let old = app.session.map().layer(id).unwrap().name.clone();
+        let mut fonts = false;
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(1200.0, 900.0)).build_ui_state(
+            move |ui, app: &mut RustGisApp| {
+                if !fonts {
+                    crate::theme::install_fonts(ui.ctx(), &[], None);
+                    fonts = true;
+                    return;
+                }
+                let ctx = ui.ctx().clone();
+                // The ribbon's button, drawn before the dialog as the ribbon is.
+                egui::Area::new(egui::Id::unique("ribbon")).fixed_pos(egui::pos2(10.0, 850.0)).show(&ctx, |ui| {
+                    if ui.button("Rename…").clicked() {
+                        app.run("ui.dialog", json!({"name": "renameLayer"})).unwrap();
+                        app.dialogs.text = "Renamed".into();
+                    }
+                });
+                super::show(app, &ctx);
+            },
+            app,
+        );
+        h.run_steps(3);
+        h.get_by_role_and_label(Role::Button, "Rename…").focus();
+        h.run();
+        h.key_press(egui::Key::Enter);
+        h.run();
+        assert_eq!(h.state().dialogs.open, Some("renameLayer"), "Enter on the button opened it");
+        assert_eq!(h.state().session.map().layer(id).unwrap().name, old, "and didn't run it");
+        h.key_press(egui::Key::Enter);
+        h.run();
+        assert_eq!(h.state().dialogs.open, None, "the next Enter ran it");
+        assert_eq!(h.state().session.map().layer(id).unwrap().name, "Renamed");
+    }
+
+    /// Enter that another pane's one-line box takes in the very first frame drawing a dialog,
+    /// before the focus recorder has run once, doesn't run the dialog (#2599).
+    #[test]
+    fn enter_before_the_focus_is_recorded_does_not_run_the_dialog() {
+        let mut app = RustGisApp::with_sample();
+        let id = app.session.map().layers.first().map(|l| l.id).unwrap();
+        app.run("layer.select", json!({"layer": id})).unwrap();
+        let old = app.session.map().layer(id).unwrap().name.clone();
+        app.run("ui.dialog", json!({"name": "renameLayer"})).unwrap();
+        app.dialogs.text = "Renamed".into();
+        let ctx = egui::Context::default();
+        let (mut other, other_id) = (String::new(), egui::Id::unique("cold_other_box"));
+        ctx.memory_mut(|m| m.request_focus(other_id));
+        let enter =
+            egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
+        let screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(1200.0, 900.0)));
+        let input = egui::RawInput { screen_rect, events: vec![enter], ..Default::default() };
+        ctx.run_ui(input, |ui| {
+            egui::Area::new(egui::Id::unique("cold_other_pane")).show(ui.ctx(), |ui| {
+                ui.add(egui::TextEdit::singleline(&mut other).id(other_id));
+            });
+            super::show(&mut app, ui.ctx());
+        })
+        // Nothing renders this pass: its textures are dropped.
+        .textures_delta
+        .clear();
+        assert_eq!(ctx.memory(|m| m.focused()), None, "the box took the Enter");
+        assert_eq!(app.dialogs.open, Some("renameLayer"), "the dialog didn't run");
+        assert_eq!(app.session.map().layer(id).unwrap().name, old);
+    }
+
     /// Enter on a focused drop-down opens it, and the dialog doesn't run (#2599).
     #[test]
     fn enter_on_a_drop_down_opens_it_only() {
@@ -3400,7 +3486,8 @@ mod tests {
         let key = |key, modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
         for event in [key(egui::Key::Tab, egui::Modifiers::SHIFT), key(egui::Key::Enter, egui::Modifiers::NONE)] {
             let input = egui::RawInput { screen_rect, events: vec![event], ..Default::default() };
-            let _ = ctx.run_ui(input, |ui| super::show(h.state_mut(), ui.ctx()));
+            // Nothing renders these passes: their textures are dropped.
+            ctx.run_ui(input, |ui| super::show(h.state_mut(), ui.ctx())).textures_delta.clear();
         }
         assert_eq!(h.state().dialogs.open, None, "the box's Enter ran it");
         assert_eq!(h.state().session.map().layer(id).unwrap().name, "Renamed");
