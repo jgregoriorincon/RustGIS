@@ -1395,6 +1395,16 @@ fn raster_image_markers_draw_their_image_read_once_from_the_style_folder() {
     assert_eq!(s.line_strokes, Some(Vec::new()), "centred and upright, it is the symbol itself");
     assert!(report.notes.is_empty(), "{:?}", report.notes);
 
+    // One file, however its path is written, is read once.
+    asked.clear();
+    let mut read = |source: &str| {
+        asked.push(source.to_string());
+        Ok((format!("image of {source}"), 0.5))
+    };
+    let twice = format!("{}{}", raster_marker("./pins/a.png", ""), raster_marker("pins/a.png", ""));
+    super::read_style(&marker_qml("1", &twice), "Pins", "/styles", &mut read, &mut Report::default()).unwrap();
+    assert_eq!(asked, ["/styles/pins/a.png"]);
+
     // Two layers of one image read it once, and anchored at their top left they sit half their
     // width right of the point and half their height (the image's, not their width) below it.
     asked.clear();

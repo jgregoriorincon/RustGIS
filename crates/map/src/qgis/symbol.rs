@@ -882,24 +882,26 @@ fn marker(layers: &[(Node, Props)], reference: Option<f64>, still: bool, layer: 
 }
 
 /// Reads the images of the raster image markers under `root` (a project or a style), each
-/// `imageFile` once, into the report for [`raster_image`]: a `base64:` one as it is, a file's
-/// through `read` (relative to `dir`). One at a web address isn't fetched, nor one kept inside a
+/// `imageFile` once (each file once, however its path is written), into the report for
+/// [`raster_image`]: a `base64:` one as it is, a file's through `read` (relative to `dir`). One at a web address isn't fetched, nor one kept inside a
 /// `.qgz` (`attachment:`); one relative to no folder (or to a drive's working folder) isn't looked
 /// for, and those past the pictures a run keeps ([`MAX_PICTURES`],
 /// [`MAX_PICTURES_BYTES`]) aren't read. An image is kept when read, before its symbol is: one
 /// in a part of the project the import then leaves out stays kept for the run, within those
 /// bounds.
 pub(super) fn read_images(root: Node, dir: &str, read: &mut ReadImage, report: &mut Report) {
-    let mut bytes = 0;
+    let (mut bytes, mut reads) = (0, 0);
+    // A file's image by its path from the folder: `./a.png` and `a.png` are one.
+    let mut files = std::collections::HashMap::<String, Result<(Picture, f32), String>>::new();
     let rasters = root.descendants().filter(|n| n.has_tag_name("layer") && n.attribute("class") == Some("RasterMarker"));
     for l in rasters.filter(|l| l.attribute("enabled") != Some("0")) {
         let p = props(l);
         let Some(file) = prop(&p, "imageFile").map(str::trim).filter(|f| !f.is_empty()) else { continue };
-        if report.images.contains_key(file) || report.images.len() >= MAX_PICTURES || bytes >= MAX_PICTURES_BYTES {
+        if report.images.contains_key(file) {
             continue;
         }
-        let got = if file.starts_with("base64:") {
-            read(file)
+        let source = if file.starts_with("base64:") {
+            Ok(None)
         } else if file.starts_with("attachment:") {
             Err("whose image is kept inside the .qgz project, which RustGIS doesn't read it from")
         } else if file.contains("://") {
@@ -909,8 +911,23 @@ pub(super) fn read_images(root: Node, dir: &str, read: &mut ReadImage, report: &
         } else if super::is_relative(file) && dir.is_empty() {
             Err("whose image file is relative to a folder the import wasn't given")
         } else {
-            read(&super::source::absolute(file, dir))
+            Ok(Some(super::source::absolute(file, dir)))
         };
+        if let Ok(Some(path)) = &source
+            && let Some(got) = files.get(path)
+        {
+            report.images.insert(file.to_string(), got.clone());
+            continue;
+        }
+        if source.is_ok() && (reads >= MAX_PICTURES || bytes >= MAX_PICTURES_BYTES) {
+            continue;
+        }
+        let got = match &source {
+            Ok(Some(path)) => read(path),
+            Ok(None) => read(file),
+            Err(why) => Err(*why),
+        };
+        reads += usize::from(source.is_ok());
         let kept = got.map_err(str::to_string).and_then(|(b64, aspect)| {
             // Past what a run keeps, it isn't (`Picture::new` gives the default then).
             let picture = Picture::new(&b64);
@@ -920,6 +937,9 @@ pub(super) fn read_images(root: Node, dir: &str, read: &mut ReadImage, report: &
             bytes += b64.len();
             Ok((picture, aspect))
         });
+        if let Ok(Some(path)) = source {
+            files.insert(path, kept.clone());
+        }
         report.images.insert(file.to_string(), kept);
     }
 }
@@ -944,7 +964,7 @@ fn raster_image(p: &[(String, String)], layer: &str, report: &mut Report) -> Opt
             return Some(got);
         }
         Some(Err(why)) => why.clone(),
-        None => "past the images RustGIS keeps".to_string(),
+        None => "past the images an import reads".to_string(),
     };
     report.approximated(layer, format!("raster image markers {why}, drawn as circles"));
     None

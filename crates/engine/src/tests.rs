@@ -2961,6 +2961,12 @@ fn qgis_raster_image_markers_read_their_files_from_the_style_folder() {
         assert_eq!(marker(&s), Marker::Circle, "{file}");
         assert_eq!(notes(&r), [note], "{file}");
     }
+    // An empty file isn't an image.
+    std::fs::write(dir.join("pins/empty.png"), b"").unwrap();
+    let path = dir.join("pins.qml");
+    std::fs::write(&path, qml("pins/empty.png")).unwrap();
+    let r = s.run("style.importQgis", &json!({"layer": "Cities", "path": path.to_string_lossy()})).unwrap();
+    assert_eq!(notes(&r), ["raster image markers whose image isn't a PNG or JPEG RustGIS reads, drawn as circles"]);
     // A named pipe isn't opened: opening one waits for a writer, which would hold the import.
     #[cfg(unix)]
     if std::process::Command::new("mkfifo").arg(dir.join("pins/pipe.png")).status().is_ok_and(|s| s.success()) {
