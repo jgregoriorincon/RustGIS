@@ -3700,10 +3700,10 @@ fn chart(pm: &mut Canvas, r: Rect, data: &rustgis_map::layout::ChartData, look: 
     let px = 7.5 * 1.33 * ppp;
     // No title leaves its room to the bars.
     let title_h = if data.title.is_empty() { 0.0 } else { px * 1.6 };
-    // A box too short to leave the bars a line under its title and key draws none of them rather
-    // than a key past its bottom and bars with no room.
+    // Stacked, a box too short to leave the bars a line under its title and key draws none of them
+    // rather than a key past its bottom and bars with no room. Not stacked, it draws as before.
     let key_h = chart_key(None, r, 0.0, &data.key, px, ppp, dark);
-    if title_h + key_h + px * 1.4 > r.height() {
+    if !data.key.is_empty() && title_h + key_h + px * 1.4 > r.height() {
         placeholder(pm, r, "Chart", ppp as f64);
         return;
     }

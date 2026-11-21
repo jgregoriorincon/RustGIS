@@ -4402,7 +4402,7 @@ fn say_chart_losses(s: &mut Session, li: usize, id: u32) {
             let named = data.key.len().saturating_sub(1);
             let stack = e.kind.chart_stack().unwrap_or_default();
             said.push(format!(
-                "the chart's key names {named} of the {} values of {stack} its bars show: {n} {} gathered in its grey Other",
+                "the chart's key names {named} of the {} values of {stack} on its bars: {n} {} gathered in its grey Other",
                 named + n,
                 if n == 1 { "is" } else { "are" }
             ));

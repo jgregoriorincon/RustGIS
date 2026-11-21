@@ -1326,8 +1326,8 @@ pub struct ChartData {
     pub key_kept: usize,
     /// Stacked, the values the bars drawn show past [`CHART_STACKS`], gathered in the key's Other.
     pub key_gathered: usize,
-    /// Stacked, the bars drawn whole (their `stretches` empty): a stretch of theirs adds up past a
-    /// number's range, though their total doesn't.
+    /// Stacked, the bars drawn whole (their `stretches` empty): a stretch of theirs, or their
+    /// stretches stacked, add up past a number's range, though their total doesn't.
     pub whole: usize,
 }
 
@@ -1518,7 +1518,7 @@ impl ElementKind {
     /// Stacked ([`ElementKind::chart_stack`]), the colours go to the values of the stack field
     /// instead: each one takes the colour all its features in the chart share, else its palette
     /// colour, so the key holds one colour per value. Stacked, it also holds a sum and two indexes
-    /// (24 bytes, and the hash map's own room) for each pair of a group value and a stack value
+    /// (24 bytes, and the B-tree's own room) for each pair of a group value and a stack value
     /// that some feature has, at most one per feature, and the stack field's names once, as the
     /// group field's.
     fn chart_data_with(&self, ds: &rustgis_data::Dataset, colour: Option<&dyn Fn(usize) -> Option<Rgba>>) -> Option<ChartData> {
@@ -1968,10 +1968,15 @@ fn stack_bars(
             *s += t;
         }
     }
-    // A bar a stretch of which adds up past a number's range (features of opposite signs near the
-    // largest number, its total still within it) is drawn whole, with no stretches.
+    // A bar a stretch of which adds up past a number's range, or whose stretches above zero or
+    // below it do once stacked (features of opposite signs near the largest number, its total
+    // still within it), is drawn whole, with no stretches.
+    let past = |s: &[f64]| {
+        let (lo, hi) = s.iter().fold((0.0_f64, 0.0_f64), |(lo, hi), v| if *v < 0.0 { (lo + v, hi) } else { (lo, hi + v) });
+        !(lo.is_finite() && hi.is_finite())
+    };
     let mut whole = 0;
-    for s in stretches.iter_mut().filter(|s| s.iter().any(|v| !v.is_finite())) {
+    for s in stretches.iter_mut().filter(|s| past(s)) {
         s.clear();
         whole += 1;
     }
@@ -3008,8 +3013,8 @@ mod tests {
         assert!(chart(serde_json::json!({"field": "people", "group": "region", "stack": "gone"})).chart_data(&ds).is_none());
     }
 
-    /// A bar a stretch of which adds up past a number's range, its total within it, is drawn whole
-    /// and counted, its stretches left empty rather than that one taken as 0; the others stack.
+    /// A bar a stretch of which adds up past a number's range, or whose stretches do once stacked,
+    /// its total within it, is drawn whole and counted, its stretches left empty rather than that one taken as 0; the others stack.
     #[test]
     fn a_stretch_past_a_numbers_range_leaves_its_bar_whole() {
         let names = || vec![Some("x".to_string()), Some("y".to_string())];
@@ -3029,6 +3034,12 @@ mod tests {
         assert_eq!(key.len(), 2);
         assert_eq!(stretches, vec![Vec::new(), Vec::new(), vec![2.0, 1.0]]);
         assert_eq!(whole, 2);
+        // Each stretch within the range, x and y above zero adding up past it once stacked, the
+        // bar's total (z below zero) still within it.
+        let names = vec![Some("x".to_string()), Some("y".to_string()), Some("z".to_string())];
+        let cells = std::collections::BTreeMap::from([((0, 0), 1e308), ((0, 1), 1e308), ((0, 2), -1e308)]);
+        let (_, stretches, _, _, whole) = stack_bars(&cells, &[Some(0)], 1, names, &[], false, true);
+        assert_eq!((stretches, whole), (vec![Vec::new()], 1));
     }
 
     /// Past the palette's colours, the key keeps all but the last of the values with the largest

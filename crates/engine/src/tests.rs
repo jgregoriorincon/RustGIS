@@ -39909,11 +39909,30 @@ fn a_stacked_charts_key_says_the_values_it_gathers() {
     let said = |s: &Session, mark| s.notices_since(mark).iter().map(|n| n.text.clone()).collect::<Vec<_>>();
     let mark = s.notice_mark();
     s.run("layout.addElement", &json!({"kind": "chart", "layer": "Shops", "field": "n", "group": "region", "stack": "kind"})).unwrap();
-    let text = "the chart's key names 7 of the 10 values of kind its bars show: 3 are gathered in its grey Other";
+    let text = "the chart's key names 7 of the 10 values of kind on its bars: 3 are gathered in its grey Other";
     assert!(said(&s, mark).iter().any(|t| t == text), "{:?}", said(&s, mark));
     let mark = s.notice_mark();
     s.run("layout.addElement", &json!({"kind": "chart", "layer": "Shops", "field": "n", "group": "kind", "stack": "region"})).unwrap();
     assert!(!said(&s, mark).iter().any(|t| t.contains("key names")), "{:?}", said(&s, mark));
+    assert!(!said(&s, mark).iter().any(|t| t.contains("drawn whole")), "a finite stack: {:?}", said(&s, mark));
+    // A stretch adding up past a number's range, the bar's total within it: the bar is drawn
+    // whole, and the chart says so.
+    let mut ds = Dataset::new(
+        "Big",
+        GeometryType::Point,
+        vec![Field::new("region", FieldType::Text), Field::new("kind", FieldType::Text), Field::new("n", FieldType::Double)],
+    );
+    for (k, n) in [("x", 1e308), ("y", -1e308), ("x", 1e308)] {
+        ds.push(
+            Some(Geometry::Point(rustgis_data::Coord::new(0.0, 0.0))),
+            vec![rustgis_data::Value::Text("A".into()), rustgis_data::Value::Text(k.into()), rustgis_data::Value::Float(n)],
+        );
+    }
+    s.map_mut().add_dataset(ds);
+    let mark = s.notice_mark();
+    s.run("layout.addElement", &json!({"kind": "chart", "layer": "Big", "field": "n", "group": "region", "stack": "kind"})).unwrap();
+    let text = "1 bar of the chart is drawn whole, not stacked: a stretch of its adds up past the largest number";
+    assert!(said(&s, mark).iter().any(|t| t == text), "{:?}", said(&s, mark));
 }
 
 /// Stacked by a second field (#2487 part 3b), each bar of a chart that groups and sums or counts
