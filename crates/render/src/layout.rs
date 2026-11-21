@@ -3686,19 +3686,13 @@ fn table(pm: &mut Canvas, r: Rect, ds: &rustgis_data::Dataset, rows: usize, ink:
 fn chart(pm: &mut Canvas, r: Rect, data: &rustgis_map::layout::ChartData, look: &ChartLook, dark: Rgba, ppp: f64, comma: bool) {
     let ppp = ppp as f32;
     let vals = &data.bars;
-    // The span runs from the most a bar reaches below zero to the most above: stacked, its
-    // stretches below zero added up and those above.
-    let (min, max) = vals
-        .iter()
-        .enumerate()
-        .map(|(i, (v, _))| data.stretches.get(i).filter(|s| !s.is_empty()).map_or_else(|| reach(&[*v]), |s| reach(s)))
-        .fold((0.0_f64, 0.0_f64), |(lo, hi), (l, h)| (lo.min(l), hi.max(h)));
+    let (min, max) = chart_span(data);
     if vals.is_empty() || (max <= 0.0 && min >= 0.0) {
         placeholder(pm, r, "Chart", ppp as f64);
         return;
     }
     let px = 7.5 * 1.33 * ppp;
-    let Some((title_h, key_h)) = chart_head(r, data, px, ppp) else {
+    let Some((title_h, key_h)) = chart_head(r, data, look, px, ppp) else {
         placeholder(pm, r, "Chart", ppp as f64);
         return;
     };
@@ -3733,22 +3727,43 @@ fn chart(pm: &mut Canvas, r: Rect, data: &rustgis_map::layout::ChartData, look: 
     }
 }
 
+/// The span a chart's bars run over: from the most a bar reaches below zero to the most above,
+/// stacked its stretches below zero added up and those above.
+fn chart_span(data: &rustgis_map::layout::ChartData) -> (f64, f64) {
+    data.bars
+        .iter()
+        .enumerate()
+        .map(|(i, (v, _))| data.stretches.get(i).filter(|s| !s.is_empty()).map_or_else(|| reach(&[*v]), |s| reach(s)))
+        .fold((0.0_f64, 0.0_f64), |(lo, hi), (l, h)| (lo.min(l), hi.max(h)))
+}
+
 /// The heights of a chart's title and key over its bars in `r`, its text `px` high: no title
 /// leaves its room to the bars. Stacked, a box too short to leave the bars a line under its title
 /// and key has none (it draws its placeholder rather than a key past its bottom and bars with no
-/// room); not stacked, it draws as before.
-fn chart_head(r: Rect, data: &rustgis_map::layout::ChartData, px: f32, ppp: f32) -> Option<(f32, f32)> {
+/// room); as columns, the bars' line is past the room their labels and values may take (written
+/// at most `px` high, [`ChartBars::columns`]), so they always have it. Not stacked, it draws as
+/// before.
+fn chart_head(r: Rect, data: &rustgis_map::layout::ChartData, look: &ChartLook, px: f32, ppp: f32) -> Option<(f32, f32)> {
     let title_h = if data.title.is_empty() { 0.0 } else { px * 1.6 };
     let key_h = chart_key(None, r, 0.0, &data.key, px, ppp, INK);
-    (data.key.is_empty() || title_h + key_h + px * 1.4 <= r.height()).then_some((title_h, key_h))
+    let line = px * 1.4;
+    let below = match look.orientation {
+        Orientation::Horizontal => 0.0,
+        Orientation::Vertical => {
+            let (min, max) = chart_span(data);
+            let values = |on: bool| if look.values && on { line } else { 0.0 };
+            (if data.labelled { line } else { 0.0 }) + values(max > 0.0) + values(min < 0.0)
+        }
+    };
+    (data.key.is_empty() || title_h + key_h + line + below <= r.height()).then_some((title_h, key_h))
 }
 
-/// Whether a chart with bars to draw, `w` × `h` mm, draws its placeholder instead as its title and
-/// key leave the bars no room ([`chart_head`]): what the commands warn of, so the page and they
+/// Whether a chart with bars to draw, `w` × `h` mm in its look, draws its placeholder instead as
+/// its title and key leave the bars no room ([`chart_head`]): what the commands warn of, so the page and they
 /// never tell it apart.
-pub fn chart_crowded(data: &rustgis_map::layout::ChartData, w: f64, h: f64) -> bool {
+pub fn chart_crowded(data: &rustgis_map::layout::ChartData, look: &ChartLook, w: f64, h: f64) -> bool {
     let Some(r) = Rect::from_xywh(0.0, 0.0, (w * PT_PER_MM).max(1.0) as f32, (h * PT_PER_MM).max(1.0) as f32) else { return false };
-    !data.bars.is_empty() && chart_head(r, data, 7.5 * 1.33, 1.0).is_none()
+    !data.bars.is_empty() && chart_head(r, data, look, 7.5 * 1.33, 1.0).is_none()
 }
 
 /// How far a bar's stretches reach below zero (its negative ones added up) and above it.
@@ -4186,6 +4201,18 @@ mod tests {
             assert!(is(&c, 100, 50, Rgba::rgb(0xF0, 0xF1, 0xF3)) && !is(&c, 5, 50, red), "the placeholder");
             assert!(c.pixmap().pixel(5, 90).is_some_and(|p| p.alpha() == 0), "nothing under the box");
         }
+        // As columns, the head leaves the bars a line past their labels and values: 40 pt high,
+        // one key row, labelled and valued, is crowded so, not across; and the commands say so as
+        // the page draws it.
+        let mut short = stacked(vec![6.0, 4.0]);
+        short.key.truncate(1);
+        short.stretches = vec![vec![10.0]];
+        short.labelled = true;
+        let (w, h) = (200.0 / PT_PER_MM, 40.0 / PT_PER_MM);
+        let valued = |orientation| ChartLook { orientation, values: true, ..ChartLook::default() };
+        assert!(chart_crowded(&short, &valued(Orientation::Vertical), w, h));
+        assert!(!chart_crowded(&short, &valued(Orientation::Horizontal), w, h));
+        assert!(!chart_crowded(&stacked(vec![6.0, 4.0]), &ChartLook::default(), w, 120.0 / PT_PER_MM));
         // A box narrower than a swatch draws the placeholder too, nothing past its right.
         let mut c = Canvas::new(200, 120).unwrap();
         chart(&mut c, Rect::from_xywh(0.0, 0.0, 5.0, 120.0).unwrap(), &stacked(vec![6.0, 4.0]), &ChartLook::default(), INK, 1.0, false);

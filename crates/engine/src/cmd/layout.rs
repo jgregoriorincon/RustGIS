@@ -4360,7 +4360,8 @@ fn chart_update(
 /// gathered in its Other or keeping their palette colour. It reads each feature of the
 /// chart's layer once, on the command's thread, as drawing the chart does on every draw of the
 /// page: run only when a chart is added, told what to draw or coloured by classes, not when it
-/// is moved or styled.
+/// is moved or styled; resized or retitled, a stacked chart reads it for [`say_chart_crowded`]
+/// alone.
 fn say_chart_losses(s: &mut Session, li: usize, id: u32) {
     say_chart(s, li, id, false);
 }
@@ -4376,83 +4377,84 @@ fn say_chart(s: &mut Session, li: usize, id: u32, crowded_only: bool) {
         let Some(l) = s.project.layouts.get(li) else { return };
         let Some(e) = l.element(id) else { return };
         let ElementKind::Chart { frame, layer, field, .. } = &e.kind else { return };
+        // Only a stacked chart can be crowded, so for that alone an unstacked one reads nothing.
+        if crowded_only && e.kind.chart_stack().is_none() {
+            return;
+        }
         // Read as the page draws it: at the frame's scale and on the series page shown.
         let Some((m, env)) = rustgis_render::layout::frame_page_env(l, &s.project.maps, *frame) else { return };
         let Some(data) = m.layer_by_name(layer).and_then(|fl| e.kind.chart_data_of(fl, &env)) else { return };
-        let crowded = rustgis_render::layout::chart_crowded(&data, e.w, e.h)
-            .then(|| "the chart's title and key leave its bars no room: it draws as a placeholder until its box is taller".to_string());
-        if crowded_only {
-            crowded.into_iter().collect()
-        } else {
-            let mut said = Vec::new();
-            if data.left_out > 0 {
-                let drawn = data.bars.len();
-                said.push(format!(
-                "the chart draws {drawn} of {} bars: {} left out (\"bars\" draws up to {MAX_CHART_BARS}, \"other\": true gathers the rest in an Other bar)",
-                drawn + data.left_out,
-                data.left_out
-            ));
-            }
-            if data.out_of_range > 0 {
-                let n = data.out_of_range;
-                said.push(format!(
-                    "{n} bar{} of the chart left out: {} statistic is past a number's range",
-                    if n == 1 { "" } else { "s" },
-                    if n == 1 { "its" } else { "their" }
-                ));
-            }
-            if data.no_number > 0 {
-                let n = data.no_number;
-                said.push(format!(
-                    "{n} feature{} of {layer} with no number in {field} left out of the chart",
-                    if n == 1 { "" } else { "s" }
-                ));
-            }
-            // Coloured by classes, the bars that keep the bar colour all the same.
-            for (n, why) in [(data.mixed, "have several colours"), (data.unshown, "show no colour")] {
-                if n > 0 {
-                    let (plural, its) = if n == 1 { ("", "its") } else { ("s", "their") };
-                    let keep = if n == 1 { "keeps" } else { "keep" };
-                    said.push(format!("{n} bar{plural} {keep} the chart's bar colour: {its} features {why} on the map"));
-                }
-            }
-            // Stacked, the values gathered in its key's Other, and coloured by classes, those that keep
-            // their palette colour.
-            if data.key_gathered > 0 {
-                let n = data.key_gathered;
-                let named = data.key.len().saturating_sub(1);
-                let stack = e.kind.chart_stack().unwrap_or_default();
-                said.push(format!(
-                    "the chart's key names {named} of the {} values of {stack} on its bars: {n} {} gathered in its grey Other",
-                    named + n,
-                    if n == 1 { "is" } else { "are" }
-                ));
-            }
-            if data.key_kept > 0 {
-                let n = data.key_kept;
-                let (plural, its, keep) = if n == 1 { ("", "its", "keeps") } else { ("s", "their", "keep") };
-                said.push(format!(
-                "{n} value{plural} of the chart's key {keep} {its} palette colour: {its} features have several colours on the map, or show none"
-            ));
-            }
-            if data.stack_gone {
-                let stack = e.kind.chart_stack().unwrap_or_default();
-                said.push(format!("the chart draws its bars whole: {layer} has no field '{stack}' to stack them by"));
-            }
-            if data.whole > 0 {
-                let n = data.whole;
-                let (plural, is, its) = if n == 1 { ("", "is", "its") } else { ("s", "are", "their") };
-                said.push(format!(
-                    "{n} bar{plural} of the chart {is} drawn whole, not stacked: {its} stretches add up past the largest number"
-                ));
-            }
-            said.extend(crowded);
-            said
+        let mut said = if crowded_only { Vec::new() } else { chart_losses(&e.kind, &data, layer, field) };
+        if rustgis_render::layout::chart_crowded(&data, &e.kind.chart_look().unwrap_or_default(), e.w, e.h) {
+            said.push("the chart's title and key leave its bars no room: it draws as a placeholder until its box is taller".to_string());
         }
+        said
     };
     for w in said {
         s.warn(w);
     }
+}
+
+/// What [`say_chart_losses`] says of the chart `kind` of `layer` and `field`, drawing `data`.
+fn chart_losses(kind: &ElementKind, data: &rustgis_map::layout::ChartData, layer: &str, field: &str) -> Vec<String> {
+    let mut said = Vec::new();
+    if data.left_out > 0 {
+        let drawn = data.bars.len();
+        said.push(format!(
+            "the chart draws {drawn} of {} bars: {} left out (\"bars\" draws up to {MAX_CHART_BARS}, \"other\": true gathers the rest in an Other bar)",
+            drawn + data.left_out,
+            data.left_out
+        ));
+    }
+    if data.out_of_range > 0 {
+        let n = data.out_of_range;
+        said.push(format!(
+            "{n} bar{} of the chart left out: {} statistic is past a number's range",
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "its" } else { "their" }
+        ));
+    }
+    if data.no_number > 0 {
+        let n = data.no_number;
+        said.push(format!("{n} feature{} of {layer} with no number in {field} left out of the chart", if n == 1 { "" } else { "s" }));
+    }
+    // Coloured by classes, the bars that keep the bar colour all the same.
+    for (n, why) in [(data.mixed, "have several colours"), (data.unshown, "show no colour")] {
+        if n > 0 {
+            let (plural, its) = if n == 1 { ("", "its") } else { ("s", "their") };
+            let keep = if n == 1 { "keeps" } else { "keep" };
+            said.push(format!("{n} bar{plural} {keep} the chart's bar colour: {its} features {why} on the map"));
+        }
+    }
+    // Stacked, the values gathered in its key's Other, and coloured by classes, those that keep
+    // their palette colour.
+    if data.key_gathered > 0 {
+        let n = data.key_gathered;
+        let named = data.key.len().saturating_sub(1);
+        let stack = kind.chart_stack().unwrap_or_default();
+        said.push(format!(
+            "the chart's key names {named} of the {} values of {stack} on its bars: {n} {} gathered in its grey Other",
+            named + n,
+            if n == 1 { "is" } else { "are" }
+        ));
+    }
+    if data.key_kept > 0 {
+        let n = data.key_kept;
+        let (plural, its, keep) = if n == 1 { ("", "its", "keeps") } else { ("s", "their", "keep") };
+        said.push(format!(
+            "{n} value{plural} of the chart's key {keep} {its} palette colour: {its} features have several colours on the map, or show none"
+        ));
+    }
+    if data.stack_gone {
+        let stack = kind.chart_stack().unwrap_or_default();
+        said.push(format!("the chart draws its bars whole: {layer} has no field '{stack}' to stack them by"));
+    }
+    if data.whole > 0 {
+        let n = data.whole;
+        let (plural, is, its) = if n == 1 { ("", "is", "its") } else { ("s", "are", "their") };
+        said.push(format!("{n} bar{plural} of the chart {is} drawn whole, not stacked: {its} stretches add up past the largest number"));
+    }
+    said
 }
 
 /// What a `font` given for an element that isn't a text is told.
@@ -5268,8 +5270,9 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
             s.warn(said);
         }
         say_chart_losses(s, li, id);
-    } else if ["w", "h", "title"].iter().any(|k| gives(p, k)) && is_chart(s, li, id) {
-        // Resized or retitled, it says only whether its bars still have room.
+    } else if (gives(p, "w") || gives(p, "h") || p.get("title").is_some()) && is_chart(s, li, id) {
+        // Resized or retitled (`null` too, its given title back), it says only whether its bars
+        // still have room.
         say_chart_crowded(s, li, id);
     }
     if emptied_colorbar {
