@@ -4057,6 +4057,8 @@ const ONLY_CHART_OPTIONS: &str =
 
 /// The keys only a chart takes: what it draws, then how it draws it.
 const CHART_DATA_KEYS: [&str; 7] = ["label", "group", "statistic", "order", "bars", "other", "stack"];
+/// What a chart is given that changes the room its title and key leave its bars, beside its size.
+const CHART_ROOM_KEYS: [&str; 3] = ["orientation", "title", "values"];
 const CHART_LOOK_KEYS: [&str; 5] = ["values", "decimals", "barColor", "classes", "labelAlign"];
 
 fn gives_chart_options(p: &Value) -> bool {
@@ -5269,9 +5271,9 @@ fn update(s: &mut Session, p: &Value) -> CmdResult {
             s.warn(said);
         }
         say_chart_losses(s, li, id);
-    } else if (gives(p, "w") || gives(p, "h") || changes_chart_look(p)) && is_chart(s, li, id) {
-        // Resized, retitled (`null` too, its given title back) or given another look (columns,
-        // values), it says only whether its bars still have room.
+    } else if (gives(p, "w") || gives(p, "h") || CHART_ROOM_KEYS.iter().any(|k| p.get(*k).is_some())) && is_chart(s, li, id) {
+        // Resized, retitled (`null` too, its given title back), turned or given values, it says
+        // only whether its bars still have room.
         say_chart_crowded(s, li, id);
     }
     if emptied_colorbar {
