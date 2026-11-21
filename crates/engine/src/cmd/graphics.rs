@@ -283,9 +283,13 @@ pub(crate) fn picture(p: &Value) -> Result<String, String> {
 pub(crate) const TOO_LARGE: &str = "the picture is too large";
 
 /// A picture file's bytes, at most `max` (refused past it: read at most one byte more, so a huge
-/// or endless file is too), its provenance kept.
+/// or endless file is too), its provenance kept. Only a regular file is opened: opening a named
+/// pipe or a device (`/dev/stdin`) waits for a writer, and this runs on the command's thread.
 pub(crate) fn read_picture_file(path: &str, max: usize) -> Result<Vec<u8>, String> {
     use std::io::Read;
+    if !std::fs::metadata(path).map_err(|e| format!("{path}: {e}"))?.is_file() {
+        return Err(format!("{path}: not a regular file"));
+    }
     let mut bytes = Vec::new();
     let file = rustgis_data::provenance::open(path).map_err(|e| format!("{path}: {e}"))?;
     (&file).take(max as u64 + 1).read_to_end(&mut bytes).map_err(|e| format!("{path}: {e}"))?;

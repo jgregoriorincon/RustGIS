@@ -2912,7 +2912,16 @@ fn qgis_annotation_layers_import_as_graphics_layers() {
 fn qgis_raster_image_markers_read_their_files_from_the_style_folder() {
     use base64::Engine;
     use rustgis_map::{Marker, Picture};
-    let dir = std::env::temp_dir().join(format!("rustgis-qgis-raster-markers-{}", std::process::id()));
+    // Removed however the test ends.
+    struct Dir(std::path::PathBuf);
+    impl Drop for Dir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let guard = Dir(std::env::temp_dir().join(format!("rustgis-qgis-raster-markers-{}", std::process::id())));
+    let dir = guard.0.clone();
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("pins")).unwrap();
     let image = image::RgbImage::from_pixel(8, 4, image::Rgb([200, 30, 30]));
     image.save(dir.join("pins/pin.png")).unwrap();
@@ -2952,6 +2961,14 @@ fn qgis_raster_image_markers_read_their_files_from_the_style_folder() {
         assert_eq!(marker(&s), Marker::Circle, "{file}");
         assert_eq!(notes(&r), [note], "{file}");
     }
+    // A named pipe isn't opened: opening one waits for a writer, which would hold the import.
+    #[cfg(unix)]
+    if std::process::Command::new("mkfifo").arg(dir.join("pins/pipe.png")).status().is_ok_and(|s| s.success()) {
+        let path = dir.join("pins.qml");
+        std::fs::write(&path, qml("pins/pipe.png")).unwrap();
+        let r = s.run("style.importQgis", &json!({"layer": "Cities", "path": path.to_string_lossy()})).unwrap();
+        assert_eq!(notes(&r), ["raster image markers whose image file doesn't open, drawn as circles"]);
+    }
     // Embedded in the style, it needs no folder.
     let b64 = base64::engine::general_purpose::STANDARD.encode(std::fs::read(dir.join("pins/pin.png")).unwrap());
     let r = s.run("style.importQgis", &json!({"layer": "Cities", "text": qml(&format!("base64:{b64}"))})).unwrap();
@@ -2982,7 +2999,36 @@ fn qgis_raster_image_markers_read_their_files_from_the_style_folder() {
             ("raster image markers whose image isn't a PNG or JPEG RustGIS reads, drawn as circles".to_string(), 2),
         ]
     );
-    std::fs::remove_dir_all(&dir).ok();
+    // A file past what a marker keeps is charged for what was read of it: two take the budget.
+    for name in ["big2.png", "big3.png"] {
+        std::fs::copy(dir.join("pins/big.png"), dir.join("pins").join(name)).unwrap();
+    }
+    let file = |f: &str| {
+        format!(
+            r#"<layer class="RasterMarker" enabled="1"><Option type="Map"><Option name="imageFile" value="pins/{f}"/></Option></layer>"#
+        )
+    };
+    let path = dir.join("pins.qml");
+    std::fs::write(
+        &path,
+        format!(
+            r#"<qgis version="4.2.3"><renderer-v2 type="singleSymbol"><symbols><symbol type="marker" name="0" alpha="1">{}{}{}</symbol></symbols></renderer-v2></qgis>"#,
+            file("big.png"),
+            file("big2.png"),
+            file("big3.png")
+        ),
+    )
+    .unwrap();
+    let r = s.run("style.importQgis", &json!({"layer": "Cities", "path": path.to_string_lossy()})).unwrap();
+    let mut said = notes(&r);
+    said.sort();
+    assert_eq!(
+        said,
+        [
+            "raster image markers past the bytes of images an import reads, drawn as circles",
+            "raster image markers whose image is past 2 MiB of base64, drawn as circles",
+        ]
+    );
 }
 
 /// Pictures are charged to an import's budget (1 KiB in tests) only once placed: pictures that

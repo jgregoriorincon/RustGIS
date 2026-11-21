@@ -1422,8 +1422,15 @@ fn raster_image_markers_draw_their_image_read_once_from_the_style_folder() {
         raster_marker("base64:QUJD", "")
     );
     let mut read = |source: &str| Ok((format!("image of {source}"), 0.5));
-    let s = super::read_style(&line, "Road", "", &mut read, &mut Report::default()).unwrap();
+    let mut report = Report::default();
+    let s = super::read_style(&line, "Road", "", &mut read, &mut report).unwrap();
     assert_eq!(s.line_strokes.unwrap()[0].markers.map(|m| m.mark), Some(picture));
+    assert!(report.notes.is_empty(), "{:?}", report.notes);
+    // Its marker symbol see-through: drawn opaque, noted.
+    let mut report = Report::default();
+    let faded = line.replace(r#"name="@0@0" alpha="1""#, r#"name="@0@0" alpha="0.5""#);
+    super::read_style(&faded, "Road", "", &mut read, &mut report).unwrap();
+    assert_eq!(report.notes.iter().map(|n| n.text.as_str()).collect::<Vec<_>>(), ["see-through raster image markers, drawn opaque"]);
 }
 
 #[test]

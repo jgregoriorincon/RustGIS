@@ -63,7 +63,9 @@ fn file_dir(p: &Value) -> Option<String> {
 const MARKER_READ_BYTES: usize = if cfg!(test) { 1 << 10 } else { rustgis_map::symbology::MAX_PICTURES_BYTES };
 
 /// The importer's reader of raster image markers' images ([`qgis::ReadImage`]): [`marker_image`]
-/// within [`MARKER_READ_BYTES`] for the import.
+/// within [`MARKER_READ_BYTES`] for the import. On the import's thread, as the rest of it is
+/// (`import_project` says why): each read is one file of at most 1.5 MiB, only a regular file is
+/// opened (a pipe or a device would wait for a writer), and the bound caps them all.
 fn marker_images() -> impl FnMut(&str) -> Result<(String, f32), &'static str> {
     let mut read = 0;
     move |source| {
@@ -76,7 +78,9 @@ fn marker_images() -> impl FnMut(&str) -> Result<(String, f32), &'static str> {
 
 /// Reads a raster image marker's image for the importer: its `base64:` text, or its file's,
 /// within what a picture marker keeps (`MAX_PICTURE_BYTES` of base64), checked as `layer.marker`
-/// checks an image; with its height over its width. Its base64's length is added to `read`.
+/// checks an image; with its height over its width. Its base64's length is added to `read`, or
+/// for a file past the limit what was read of it, so the import's bound overshoots by one file at
+/// most.
 fn marker_image(source: &str, read: &mut usize) -> Result<(String, f32), &'static str> {
     use base64::Engine;
     use rustgis_map::symbology::MAX_PICTURE_BYTES;
@@ -86,7 +90,11 @@ fn marker_image(source: &str, read: &mut usize) -> Result<(String, f32), &'stati
         // Base64 is 4 characters for 3 bytes.
         None => match super::graphics::read_picture_file(source, MAX_PICTURE_BYTES / 4 * 3) {
             Ok(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
-            Err(e) if e == super::graphics::TOO_LARGE => return Err(TOO_LARGE),
+            // What was read of it is charged, as its base64 would be.
+            Err(e) if e == super::graphics::TOO_LARGE => {
+                *read += MAX_PICTURE_BYTES;
+                return Err(TOO_LARGE);
+            }
             Err(_) => return Err("whose image file doesn't open"),
         },
     };
@@ -103,7 +111,7 @@ fn marker_image(source: &str, read: &mut usize) -> Result<(String, f32), &'stati
         None => rustgis_render::picture_marker_readable(&b64),
     };
     match rustgis_render::picture_size(&b64) {
-        Some((w, h)) if readable && w > 0 => Ok((b64, h as f32 / w as f32)),
+        Some((w, h)) if readable && w > 0 && h > 0 => Ok((b64, h as f32 / w as f32)),
         _ => Err("whose image isn't a PNG or JPEG RustGIS reads"),
     }
 }
@@ -128,7 +136,9 @@ fn read_file(path: &str) -> Result<Vec<u8>, String> {
 /// wait for its metadata, as Add Data adds one.) Its work is bounded by the project: at most
 /// [`qgis::MAX_LAYERS`] layers, each read once by the command that adds it (a file's layers, and
 /// a virtual layer on one, each read their file), archives added without waiting for their
-/// metadata, annotation pictures within [`MAX_PICTURE_BYTES`]. A local archive's file is looked
+/// metadata, annotation pictures within [`MAX_PICTURE_BYTES`], raster image markers' images within
+/// [`MARKER_READ_BYTES`] (each file once, at most 1,024 of them, before any layer is added: see
+/// [`marker_images`]). A local archive's file is looked
 /// for on this thread (`is_file`), which a slow network share can hold up, and a web service's
 /// layer (WMS, WMTS, WFS, OGC API, ArcGIS, WCS) asks its service on this thread, through
 /// `service.add`: its capabilities, then a WFS, OGC API or ArcGIS layer's features (each page

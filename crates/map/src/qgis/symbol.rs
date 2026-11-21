@@ -658,6 +658,10 @@ fn along(l: Node, p: &[(String, String)], hash: bool, reference: Option<f64>, la
             marker_mark(class, &sp, base, reference, layer, report)
         };
         if let Some(mut st) = stroke {
+            // An image mark is drawn at the layer's opacity alone.
+            if alpha < 1.0 && st.markers.is_some_and(|m| matches!(m.mark, LineMark::Marker(Marker::Picture(_)))) {
+                report.approximated(layer, "see-through raster image markers, drawn opaque");
+            }
             st.offset += across;
             st.level = pass;
             st.color = st.color.map(fade);
