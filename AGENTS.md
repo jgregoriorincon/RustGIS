@@ -90,6 +90,10 @@ measures.
 - **Everything is a command**: a `CommandSpec` in `crates/engine/src/cmd/*.rs`. UI-only
   commands (`ui.*`) live in `crates/ui-egui/src/lib.rs`. The ribbon, shortcuts, command search
   and CLI dispatch by id. Commands never open dialogs.
+- **`.view()` leaves the layers as they are**: a command that adds, removes or reorders layers
+  mutates, even when it fails part way, or run by itself it leaves no Undo step. The engine tests
+  fail a registered command declared `.view()` that does (the check in `invoke`,
+  `policy/dispatch.rs`), but only on the paths they run.
 - **Command ingress**: root `Session::run` is trusted native User dispatch. Assistant, MCP,
   plugin, imported-item and continuation adapters carry their named opaque policy scope;
   scopes inherit or narrow, and `with_scope` rejects nested ingress. Peer project text uses

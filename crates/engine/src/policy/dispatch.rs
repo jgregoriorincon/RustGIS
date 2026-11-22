@@ -984,8 +984,8 @@ impl Session {
                 // A command that doesn't mutate leaves the layers alone unless it moved the history
                 // state or the project (an undo, a project opened or saved elsewhere), not just
                 // marked it unsaved, and failing doesn't excuse it: by itself, nothing undoes it.
-                // Checked on every command the tests run, by itself or as a step, so a command
-                // declared wrong fails them.
+                // Checked on every registered command the tests run, by itself or as a step, so
+                // one declared wrong fails them on the paths they reach (AGENTS.md).
                 #[cfg(test)]
                 let declared = (!spec.mutates).then(|| self.restored());
                 let result = match txn {
