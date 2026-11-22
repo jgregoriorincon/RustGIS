@@ -1380,20 +1380,6 @@ mod tests {
         rustgis_plugins::unload("eng-bridge");
     }
 
-    /// A host call that fails inside a savepoint is undone whole, so it isn't an edit (#2645).
-    #[test]
-    fn a_failed_savepoint_call_is_not_an_edit() {
-        let pkg = rustgis_plugins::Package::from_zip(&rustgis_plugins::testing::package("eng-savepoint", &["edit"])).unwrap();
-        rustgis_plugins::load(pkg, "test").unwrap();
-        let plugin = rustgis_plugins::get("eng-savepoint").unwrap();
-        let mut s = Session::new(crate::Project::default());
-        let fetches = fetch::Calls::for_plugin("eng-savepoint");
-        let mut bridge = Bridge { s: &mut s, plugin, fetches };
-        assert!(bridge.call("edit.applyShapeConversion", &json!({})).is_err());
-        assert!(!bridge.s.shared_steps.edited, "a call its savepoint undid changed nothing");
-        rustgis_plugins::unload("eng-savepoint");
-    }
-
     /// A plugin can't choose a download's number: the app gives it, so one plugin can't land or
     /// share another command's wait (#1202).
     #[test]

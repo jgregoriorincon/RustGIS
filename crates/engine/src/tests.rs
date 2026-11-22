@@ -386,6 +386,25 @@ fn invoke_refuses_a_plugin_command_as_a_step() {
     assert!(err.contains("runs only by itself"), "{err}");
 }
 
+/// A step that changed the project and then failed is undone whole by its savepoint, so it isn't
+/// an edit; without one, nothing undoes it part way, so it counts (#2645).
+#[test]
+fn a_failed_step_counts_unless_its_savepoint_undid_it() {
+    let mut s = world();
+    let spec = *s.registry.get("map.rename").unwrap();
+    let name = s.map().name.clone();
+    let half_done = |s: &mut Session| -> crate::CmdResult {
+        s.map_mut().name = "Half done".into();
+        Err("failed part way".into())
+    };
+    for savepoint in [true, false] {
+        s.shared_steps = crate::StepTally::default();
+        assert!(s.shared_step(&spec, savepoint, half_done).is_err());
+        assert_eq!((s.map().name == name, s.shared_steps.edited), (savepoint, !savepoint), "savepoint: {savepoint}");
+        s.map_mut().name = name.clone();
+    }
+}
+
 /// A command that doesn't mutate but adds a layer still makes a script's line an edit (#2645):
 /// the layers are measured in every build, not only checked in debug ones.
 #[test]

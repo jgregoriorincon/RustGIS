@@ -762,11 +762,11 @@ pub(crate) struct StepTally {
 
 /// What a step can move of what undo restores without saying so: the history state
 /// (`edit.undo`), the project replaced (`project.new`), its file (`project.saveAs`), the unsaved
-/// mark a write that changed layers leaves (Publish to Source), and each map's layers. Measured
-/// before and after a shared step ([`Session::shared_step`]), not inferred from what the command
-/// may reach. The project's other contents change only by commands that mutate,
-/// except its history log, where an export records itself as a log entry, not an edit, as when
-/// it runs by itself.
+/// mark a write that changed layers leaves (Publish to Source), and which layers each map has,
+/// in what order. Measured before and after a shared step ([`Session::shared_step`]), not
+/// inferred from what the command may reach. The project's other contents (a layer's name, look
+/// or features) change only by commands that mutate, except its history log, where an export
+/// records itself as a log entry, not an edit, as when it runs by itself.
 #[derive(PartialEq, Eq)]
 struct Restored {
     state: u64,
