@@ -109,6 +109,9 @@ pub struct CommandSpec {
     /// Pure executor-owned resolution for commands whose inputs exceed the common layer selector.
     pub(crate) transition: Option<fn(&cmd::InputContext<'_>, &Value) -> Result<Option<cmd::Selection>, String>>,
     pub(crate) inputs: Option<fn(&cmd::InputContext<'_>, &Value) -> Result<cmd::Inputs, String>>,
+    /// As a step of another command, it runs in a [`Session::savepoint`]: undone whole when it
+    /// fails, since a plugin may handle the error and go on.
+    pub(crate) savepoint: bool,
 }
 
 fn always(_: &Session) -> Option<&'static str> {
@@ -147,7 +150,13 @@ impl CommandSpec {
             roles: None,
             inputs: None,
             transition: None,
+            savepoint: false,
         }
+    }
+    /// See [`CommandSpec::savepoint`].
+    pub(crate) const fn savepoint(mut self) -> Self {
+        self.savepoint = true;
+        self
     }
     /// Declares the effects reviewed for this command; omitted declarations fail closed.
     pub const fn effects(mut self, effects: policy::Effects) -> Self {
@@ -2240,13 +2249,15 @@ impl Session {
     }
 
     /// Runs `run`, the command `spec`, as a step of the command running now, in its transaction
-    /// (a script's line, a task's step, a plugin's call), or in a [`Session::savepoint`] of it:
+    /// (a script's line, a task's step, a plugin's call), or in a [`Session::savepoint`] of it
+    /// when the command asks ([`CommandSpec::savepoint`]):
     /// it takes no undo step of its own, and what it did goes into [`Session::shared_steps`].
     /// Whether it left a request or changed nothing ([`Session::request_only`]) is its own, never
     /// the enclosing command's. It edited when it mutates and didn't say it changed nothing, or
     /// when [`Restored`] moved. A failed step that mutates counts too unless a savepoint undid it:
     /// telling what it changed would cost a copy of each layer it touched.
-    pub(crate) fn shared_step(&mut self, spec: &CommandSpec, savepoint: bool, run: impl FnOnce(&mut Session) -> CmdResult) -> CmdResult {
+    pub(crate) fn shared_step(&mut self, spec: &CommandSpec, run: impl FnOnce(&mut Session) -> CmdResult) -> CmdResult {
+        let savepoint = spec.savepoint;
         let outer = std::mem::take(&mut self.request_only);
         // Once the account holds an edit, nothing a step does changes it: no need to measure.
         let before = (!self.shared_steps.edited).then(|| self.restored());

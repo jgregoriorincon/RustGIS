@@ -391,7 +391,7 @@ fn invoke_refuses_a_plugin_command_as_a_step() {
 #[test]
 fn a_failed_step_counts_unless_its_savepoint_undid_it() {
     let mut s = world();
-    let spec = *s.registry.get("map.rename").unwrap();
+    let rename = *s.registry.get("map.rename").unwrap();
     let name = s.map().name.clone();
     let half_done = |s: &mut Session| -> crate::CmdResult {
         s.map_mut().name = "Half done".into();
@@ -399,16 +399,33 @@ fn a_failed_step_counts_unless_its_savepoint_undid_it() {
     };
     for savepoint in [true, false] {
         s.shared_steps = crate::StepTally::default();
-        assert!(s.shared_step(&spec, savepoint, half_done).is_err());
+        let spec = crate::CommandSpec { savepoint, ..rename };
+        assert!(s.shared_step(&spec, half_done).is_err());
         assert_eq!((s.map().name == name, s.shared_steps.edited), (savepoint, !savepoint), "savepoint: {savepoint}");
         s.map_mut().name = name.clone();
     }
 }
 
-/// A command that doesn't mutate but adds a layer still makes a script's line an edit (#2645):
-/// the layers are measured in every build, not only checked in debug ones.
+/// A step that doesn't mutate but changes the layers is still an edit (#2645): they are measured
+/// in every build, not inferred from the command's declaration.
 #[test]
-fn script_step_measures_the_layers_a_step_changes() {
+fn shared_step_measures_the_layers_a_step_changes() {
+    let mut s = world();
+    let spec = *s.registry.commands.iter().find(|c| !c.mutates).unwrap();
+    let (count, ds) = (s.map().layers.len(), s.map().layers[0].dataset.clone());
+    let quiet_layer = |s: &mut Session| -> crate::CmdResult {
+        crate::cmd::layer::add_dataset(s, ds);
+        Ok(Value::Null)
+    };
+    s.shared_step(&spec, quiet_layer).unwrap();
+    assert_eq!((s.shared_steps.edited, s.map().layers.len()), (true, count + 1));
+}
+
+/// A command declared as not mutating that changes the layers fails the tests (#2645), by itself
+/// or as a script's line, so its declaration stays honest.
+#[test]
+#[should_panic(expected = "test.quietLayer doesn't mutate but changed the layers")]
+fn a_command_that_changes_layers_must_say_it_mutates() {
     let mut s = world();
     s.registry.commands.push(
         crate::CommandSpec::new("test.quietLayer", "Quiet layer", "Test", |s, _| {
@@ -418,12 +435,7 @@ fn script_step_measures_the_layers_a_step_changes() {
         })
         .view(),
     );
-    s.mark_saved();
-    let (depth, count) = (s.undo_depth(), s.map().layers.len());
-    s.run("script.run", &json!({"script": "test.quietLayer {}"})).unwrap();
-    assert_eq!((s.undo_depth(), s.dirty(), s.map().layers.len()), (depth + 1, true, count + 1));
-    s.run("edit.undo", &Value::Null).unwrap();
-    assert_eq!(s.map().layers.len(), count);
+    let _ = s.run("test.quietLayer", &Value::Null);
 }
 
 /// A task's steps are counted as a script's lines: an undo step only when one edited (#2621).

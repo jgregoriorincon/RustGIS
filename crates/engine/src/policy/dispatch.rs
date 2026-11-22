@@ -981,12 +981,24 @@ impl Session {
                 // start in it, and inside the transaction that made it, so Undo and a failure take
                 // it back and the project is unsaved ([`crate::cmd::project::first_layer_watch`]).
                 let first_layer = crate::cmd::project::first_layer_watch(self, &spec);
+                // A command that doesn't mutate leaves the layers alone unless it moved what undo
+                // restores (an undo, a project opened): checked on every command the tests run,
+                // by itself or as a step, so a command declared wrong fails them.
+                #[cfg(test)]
+                let declared = (!spec.mutates).then(|| self.restored());
                 let result = match txn {
                     Txn::Own => self.guarded(spec.label, spec.mutates, run),
-                    Txn::Shared => self.shared_step(&spec, spec.id == "edit.applyShapeConversion", run),
+                    Txn::Shared => self.shared_step(&spec, run),
                 };
                 if let (Ok(_), Some(before)) = (&result, first_layer) {
                     crate::cmd::project::take_first_layer_system(self, &before);
+                }
+                #[cfg(test)]
+                if let Some(before) = declared {
+                    let after = self.restored();
+                    let rest = |r: crate::Restored| crate::Restored { layers: Vec::new(), ..r };
+                    let layers = after.layers == before.layers;
+                    assert!(result.is_err() || layers || rest(after) != rest(before), "{} doesn't mutate but changed the layers", spec.id);
                 }
                 self.url_completion_landed(spec.id, &params, &result);
                 if result.is_ok() && (spec.mutates || spec.effects.contains(crate::policy::Effect::History)) && spec.id != "data.similar" {
