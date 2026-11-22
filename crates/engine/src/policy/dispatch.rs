@@ -917,6 +917,12 @@ impl Session {
         let node = op.node.clone();
         match &op.op {
             CommandOp::Plugin { pin, .. } => {
+                // A plugin's command is a transaction of its own, never a step of another
+                // command: scripts and tasks run registered commands only, and a plugin can't run
+                // another's.
+                if !matches!(txn, Txn::Own) {
+                    return Err("a plugin's command runs only by itself, not as a step of another command".into());
+                }
                 let pin = pin.clone();
                 // Plugin host calls are checked against the pinned manifest, not an invented
                 // finite list of calls made by code that has yet to run.
@@ -977,8 +983,7 @@ impl Session {
                 let first_layer = crate::cmd::project::first_layer_watch(self, &spec);
                 let result = match txn {
                     Txn::Own => self.guarded(spec.label, spec.mutates, run),
-                    Txn::Shared if spec.id == "edit.applyShapeConversion" => self.shared_step(&spec, |s| s.savepoint(spec.label, run)),
-                    Txn::Shared => self.shared_step(&spec, run),
+                    Txn::Shared => self.shared_step(&spec, spec.id == "edit.applyShapeConversion", run),
                 };
                 if let (Ok(_), Some(before)) = (&result, first_layer) {
                     crate::cmd::project::take_first_layer_system(self, &before);

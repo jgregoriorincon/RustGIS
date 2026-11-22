@@ -373,6 +373,40 @@ fn script_step_follows_what_its_lines_change_not_what_they_reach() {
     assert_eq!(s.path.as_deref(), Some(first.as_path()));
 }
 
+/// A plugin's command can't run as a step of another command (#2645): it would be a transaction
+/// of its own inside the caller's.
+#[test]
+fn invoke_refuses_a_plugin_command_as_a_step() {
+    let mut s = world();
+    plugin("step-plugin", &["edit"]);
+    let err = s.run("script.run", &json!({"script": "plugin:step-plugin/h {}"})).unwrap_err();
+    assert!(err.contains("unknown command"), "{err}");
+    let op = s.authorize("plugin:step-plugin/h", &json!({})).unwrap();
+    let err = s.invoke(op, crate::policy::Txn::Shared).unwrap_err();
+    assert!(err.contains("runs only by itself"), "{err}");
+}
+
+/// A command that doesn't mutate but adds a layer still makes a script's line an edit (#2645):
+/// the layers are measured in every build, not only checked in debug ones.
+#[test]
+fn script_step_measures_the_layers_a_step_changes() {
+    let mut s = world();
+    s.registry.commands.push(
+        crate::CommandSpec::new("test.quietLayer", "Quiet layer", "Test", |s, _| {
+            let ds = s.map().layers[0].dataset.clone();
+            crate::cmd::layer::add_dataset(s, ds);
+            Ok(Value::Null)
+        })
+        .view(),
+    );
+    s.mark_saved();
+    let (depth, count) = (s.undo_depth(), s.map().layers.len());
+    s.run("script.run", &json!({"script": "test.quietLayer {}"})).unwrap();
+    assert_eq!((s.undo_depth(), s.dirty(), s.map().layers.len()), (depth + 1, true, count + 1));
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert_eq!(s.map().layers.len(), count);
+}
+
 /// A task's steps are counted as a script's lines: an undo step only when one edited (#2621).
 #[test]
 fn task_takes_an_undo_step_only_when_a_step_edits() {
