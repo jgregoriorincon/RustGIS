@@ -2261,12 +2261,8 @@ impl Session {
         let outer = std::mem::take(&mut self.request_only);
         // Once the account holds an edit, nothing a step does changes it: no need to measure.
         let before = (!self.shared_steps.edited).then(|| self.restored());
-        let res =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-                || {
-                    if spec.atomic { self.savepoint(spec.label, run) } else { run(self) }
-                },
-            ));
+        let step = |s: &mut Session| if spec.atomic { s.savepoint(spec.label, run) } else { run(s) };
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| step(self)));
         let unchanged = std::mem::replace(&mut self.request_only, outer);
         let moved = before.is_some_and(|before| self.restored() != before);
         let kept = !spec.atomic || matches!(res, Ok(Ok(_)));

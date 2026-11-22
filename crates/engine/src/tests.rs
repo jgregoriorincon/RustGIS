@@ -421,9 +421,9 @@ fn shared_step_measures_the_layers_a_step_changes() {
     assert_eq!((s.shared_steps.edited, s.map().layers.len()), (true, count + 1));
 }
 
-/// A command declared as not mutating that changes the layers fails the tests (#2645), by itself
-/// or as a script's line, so its declaration stays honest; marking the project unsaved or failing
-/// afterwards doesn't excuse it.
+/// A command declared as not mutating that adds, removes or reorders layers fails the tests
+/// (#2645), by itself or as a script's line; marking the project unsaved or failing afterwards
+/// doesn't excuse it. A layer's name, look or features aren't measured.
 #[test]
 #[should_panic(expected = "test.quietLayer doesn't mutate but changed the layers")]
 fn a_command_that_changes_layers_must_say_it_mutates() {

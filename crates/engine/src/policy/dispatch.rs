@@ -999,8 +999,8 @@ impl Session {
                 if let Some(before) = declared {
                     let after = self.restored();
                     let rest = |r: crate::Restored| crate::Restored { layers: Vec::new(), unsaved_marks: 0, ..r };
-                    let layers = after.layers == before.layers;
-                    assert!(layers || rest(after) != rest(before), "{} doesn't mutate but changed the layers", spec.id);
+                    let same_layers = after.layers == before.layers;
+                    assert!(same_layers || rest(after) != rest(before), "{} doesn't mutate but changed the layers", spec.id);
                 }
                 self.url_completion_landed(spec.id, &params, &result);
                 if result.is_ok() && (spec.mutates || spec.effects.contains(crate::policy::Effect::History)) && spec.id != "data.similar" {
