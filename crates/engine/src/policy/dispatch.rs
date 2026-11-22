@@ -984,9 +984,10 @@ impl Session {
                 // A command that doesn't mutate leaves the layers alone, unless it says it moves the
                 // history (Undo, Redo) or replaces the project: what it did on the way (a nested
                 // edit, an unsaved mark, a failure) doesn't excuse it, since by itself nothing
-                // undoes it. Checked on every registered command the tests run, by itself or as a
-                // step, so one declared wrong fails them on the paths they reach (AGENTS.md).
-                #[cfg(test)]
+                // undoes it. Checked on every registered command the unit and integration tests
+                // run, by itself or as a step, so one declared wrong fails them on the paths they
+                // reach (AGENTS.md).
+                #[cfg(any(test, feature = "declaration-check"))]
                 let declared = (!spec.mutates
                     && !spec.effects.contains(crate::policy::Effect::History)
                     && !spec.effects.contains(crate::policy::Effect::Replaces))
@@ -998,7 +999,7 @@ impl Session {
                 if let (Ok(_), Some(before)) = (&result, first_layer) {
                     crate::cmd::project::take_first_layer_system(self, &before);
                 }
-                #[cfg(test)]
+                #[cfg(any(test, feature = "declaration-check"))]
                 if let Some(before) = declared {
                     assert!(self.restored().layers == before, "{} doesn't mutate but changed the layers", spec.id);
                 }
