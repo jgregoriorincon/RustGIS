@@ -981,9 +981,10 @@ impl Session {
                 // start in it, and inside the transaction that made it, so Undo and a failure take
                 // it back and the project is unsaved ([`crate::cmd::project::first_layer_watch`]).
                 let first_layer = crate::cmd::project::first_layer_watch(self, &spec);
-                // A command that doesn't mutate leaves the layers alone unless it moved what undo
-                // restores (an undo, a project opened): checked on every command the tests run,
-                // by itself or as a step, so a command declared wrong fails them.
+                // A command that doesn't mutate leaves the layers alone unless it moved the history
+                // state or the project (an undo, a project opened or saved elsewhere), not just
+                // marked it unsaved: checked on every command the tests run, by itself or as a
+                // step, so a command declared wrong fails them.
                 #[cfg(test)]
                 let declared = (!spec.mutates).then(|| self.restored());
                 let result = match txn {
@@ -996,7 +997,7 @@ impl Session {
                 #[cfg(test)]
                 if let Some(before) = declared {
                     let after = self.restored();
-                    let rest = |r: crate::Restored| crate::Restored { layers: Vec::new(), ..r };
+                    let rest = |r: crate::Restored| crate::Restored { layers: Vec::new(), unsaved_marks: 0, ..r };
                     let layers = after.layers == before.layers;
                     assert!(result.is_err() || layers || rest(after) != rest(before), "{} doesn't mutate but changed the layers", spec.id);
                 }

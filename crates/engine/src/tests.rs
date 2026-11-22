@@ -399,7 +399,7 @@ fn a_failed_step_counts_unless_its_savepoint_undid_it() {
     };
     for savepoint in [true, false] {
         s.shared_steps = crate::StepTally::default();
-        let spec = crate::CommandSpec { savepoint, ..rename };
+        let spec = crate::CommandSpec { atomic: savepoint, ..rename };
         assert!(s.shared_step(&spec, half_done).is_err());
         assert_eq!((s.map().name == name, s.shared_steps.edited), (savepoint, !savepoint), "savepoint: {savepoint}");
         s.map_mut().name = name.clone();
@@ -411,7 +411,7 @@ fn a_failed_step_counts_unless_its_savepoint_undid_it() {
 #[test]
 fn shared_step_measures_the_layers_a_step_changes() {
     let mut s = world();
-    let spec = *s.registry.commands.iter().find(|c| !c.mutates).unwrap();
+    let spec = *s.registry.get("map.zoomFull").unwrap();
     let (count, ds) = (s.map().layers.len(), s.map().layers[0].dataset.clone());
     let quiet_layer = |s: &mut Session| -> crate::CmdResult {
         crate::cmd::layer::add_dataset(s, ds);
@@ -422,7 +422,8 @@ fn shared_step_measures_the_layers_a_step_changes() {
 }
 
 /// A command declared as not mutating that changes the layers fails the tests (#2645), by itself
-/// or as a script's line, so its declaration stays honest.
+/// or as a script's line, so its declaration stays honest; marking the project unsaved doesn't
+/// excuse it.
 #[test]
 #[should_panic(expected = "test.quietLayer doesn't mutate but changed the layers")]
 fn a_command_that_changes_layers_must_say_it_mutates() {
@@ -431,6 +432,7 @@ fn a_command_that_changes_layers_must_say_it_mutates() {
         crate::CommandSpec::new("test.quietLayer", "Quiet layer", "Test", |s, _| {
             let ds = s.map().layers[0].dataset.clone();
             crate::cmd::layer::add_dataset(s, ds);
+            s.mark_unsaved();
             Ok(Value::Null)
         })
         .view(),
