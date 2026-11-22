@@ -981,13 +981,16 @@ impl Session {
                 // start in it, and inside the transaction that made it, so Undo and a failure take
                 // it back and the project is unsaved ([`crate::cmd::project::first_layer_watch`]).
                 let first_layer = crate::cmd::project::first_layer_watch(self, &spec);
-                // A command that doesn't mutate leaves the layers alone unless it moved the history
-                // state or the project (an undo, a project opened or saved elsewhere), not just
-                // marked it unsaved, and failing doesn't excuse it: by itself, nothing undoes it.
-                // Checked on every registered command the tests run, by itself or as a step, so
-                // one declared wrong fails them on the paths they reach (AGENTS.md).
+                // A command that doesn't mutate leaves the layers alone, unless it says it moves the
+                // history (Undo, Redo) or replaces the project: what it did on the way (a nested
+                // edit, an unsaved mark, a failure) doesn't excuse it, since by itself nothing
+                // undoes it. Checked on every registered command the tests run, by itself or as a
+                // step, so one declared wrong fails them on the paths they reach (AGENTS.md).
                 #[cfg(test)]
-                let declared = (!spec.mutates).then(|| self.restored());
+                let declared = (!spec.mutates
+                    && !spec.effects.contains(crate::policy::Effect::History)
+                    && !spec.effects.contains(crate::policy::Effect::Replaces))
+                .then(|| self.restored().layers);
                 let result = match txn {
                     Txn::Own => self.guarded(spec.label, spec.mutates, run),
                     Txn::Shared => self.shared_step(&spec, run),
@@ -997,10 +1000,7 @@ impl Session {
                 }
                 #[cfg(test)]
                 if let Some(before) = declared {
-                    let after = self.restored();
-                    let rest = |r: crate::Restored| crate::Restored { layers: Vec::new(), unsaved_marks: 0, ..r };
-                    let same_layers = after.layers == before.layers;
-                    assert!(same_layers || rest(after) != rest(before), "{} doesn't mutate but changed the layers", spec.id);
+                    assert!(self.restored().layers == before, "{} doesn't mutate but changed the layers", spec.id);
                 }
                 self.url_completion_landed(spec.id, &params, &result);
                 if result.is_ok() && (spec.mutates || spec.effects.contains(crate::policy::Effect::History)) && spec.id != "data.similar" {

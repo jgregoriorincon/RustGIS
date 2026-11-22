@@ -91,8 +91,9 @@ measures.
   commands (`ui.*`) live in `crates/ui-egui/src/lib.rs`. The ribbon, shortcuts, command search
   and CLI dispatch by id. Commands never open dialogs.
 - **`.view()` leaves the layers as they are**: a command that adds, removes or reorders layers
-  mutates, even when it fails part way, or run by itself it leaves no Undo step. The engine tests
-  fail a registered command declared `.view()` that does (the check in `invoke`,
+  mutates, even when it fails part way. Declared `.view()`, it leaves no Undo step when it runs by
+  itself. Only Undo, Redo (`Effect::History`) and a project replaced (`Effect::Replaces`) may.
+  The engine tests fail a registered command declared wrong (the check in `invoke`,
   `policy/dispatch.rs`), but only on the paths they run.
 - **Command ingress**: root `Session::run` is trusted native User dispatch. Assistant, MCP,
   plugin, imported-item and continuation adapters carry their named opaque policy scope;
