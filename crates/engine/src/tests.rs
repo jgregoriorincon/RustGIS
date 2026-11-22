@@ -422,8 +422,8 @@ fn shared_step_measures_the_layers_a_step_changes() {
 }
 
 /// A command declared as not mutating that changes the layers fails the tests (#2645), by itself
-/// or as a script's line, so its declaration stays honest; marking the project unsaved doesn't
-/// excuse it.
+/// or as a script's line, so its declaration stays honest; marking the project unsaved or failing
+/// afterwards doesn't excuse it.
 #[test]
 #[should_panic(expected = "test.quietLayer doesn't mutate but changed the layers")]
 fn a_command_that_changes_layers_must_say_it_mutates() {
@@ -433,7 +433,7 @@ fn a_command_that_changes_layers_must_say_it_mutates() {
             let ds = s.map().layers[0].dataset.clone();
             crate::cmd::layer::add_dataset(s, ds);
             s.mark_unsaved();
-            Ok(Value::Null)
+            Err("failed after adding it".into())
         })
         .view(),
     );
