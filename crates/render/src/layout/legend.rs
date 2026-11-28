@@ -1255,8 +1255,9 @@ pub fn legend_sizes_in_columns_mm<const N: usize>(
     (show_no_data, text_size): (bool, f64),
     (exclude, labels): (&[String], &BTreeMap<String, String>),
 ) -> Option<[(f64, f64); N]> {
-    // These callers (publication's) measure legends with no class labels of their own; a saved
-    // legend is measured through `LegendAsked`.
+    // Measured with no class labels: publication's legends have none, and the public sizers that
+    // come here (`legend_sizes_mm`, `legend_sizes_with_no_data_mm`) take none. A saved legend is
+    // measured through `LegendAsked`, which carries its own.
     let class_labels = &ClassLabels::NONE;
     let asked = LegendAsked { all_classes, hide_other, show_no_data, layer_names: true, text_size, exclude, labels, class_labels };
     sizes_asked_mm(map, scale, &asked)
