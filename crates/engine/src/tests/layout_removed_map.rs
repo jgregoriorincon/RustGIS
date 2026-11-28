@@ -66,7 +66,9 @@ fn deleting_a_map_a_page_shows_says_so_and_the_page_keeps_the_name() {
     );
     assert_eq!(drawn_over(&s, 1), s.map().name);
     // Exporting draws it as before, with nothing more said.
-    assert_eq!(missing(&mut s, "presentation.export", json!({"format": "html"})), Vec::<String>::new());
+    let mark = s.notice_mark();
+    crate::cmd::presentation::export_bytes(&mut s, 0, "html", 120.0).unwrap();
+    assert!(s.notices_since(mark).iter().all(|n| !n.text.contains("which the project doesn't have")));
     // A map of that name brings the page back to it.
     s.run("map.new", &json!({"name": "Other"})).unwrap();
     assert_eq!(drawn_over(&s, 1), "Other");

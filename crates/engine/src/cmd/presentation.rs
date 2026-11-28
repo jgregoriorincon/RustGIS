@@ -662,8 +662,8 @@ pub(crate) fn say_pages_without_their_map(s: &mut Session, which: PagesOf<'_>) {
                 continue;
             }
             pages += 1;
-            if presentations.last() != Some(&&pres.name) {
-                presentations.push(&pres.name);
+            if presentations.last().is_none_or(|&(last, _)| last != i) {
+                presentations.push((i, &pres.name));
             }
             if !named.iter().any(|n| n.eq_ignore_ascii_case(map)) {
                 if named.len() < MISSING_MAPS_NAMED {
@@ -676,7 +676,7 @@ pub(crate) fn say_pages_without_their_map(s: &mut Session, which: PagesOf<'_>) {
     }
     let whose = match presentations.as_slice() {
         [] => return,
-        [name] => NoticeText::format("Presentation '{name}'", [("name", (*name).clone().into())]),
+        [(_, name)] => NoticeText::format("Presentation '{name}'", [("name", (*name).clone().into())]),
         several => NoticeText::format("{count} presentations", [("count", several.len().to_string().into())]),
     };
     let key = match (pages, named.len()) {
