@@ -900,9 +900,9 @@ fn every_class(l: &rustgis_map::Layer) -> Vec<LegendEntry> {
 }
 
 /// The labels of every class row a legend can list for a layer, those a legend can give its own
-/// text to (#3187): its classes, its missing-value row and its diagram's categories. None for a
-/// layer drawn in one symbol, whose row bears its name.
-pub fn legend_class_labels(l: &rustgis_map::Layer) -> Vec<String> {
+/// text to (#3187): its classes, its missing-value row (drawn only under `show_no_data`) and its
+/// diagram's categories. Empty for a layer with none of these, whose row bears its name.
+pub fn class_row_labels(l: &rustgis_map::Layer) -> Vec<String> {
     if !legend_lists(l) {
         return Vec::new();
     }
@@ -1255,6 +1255,8 @@ pub fn legend_sizes_in_columns_mm<const N: usize>(
     (show_no_data, text_size): (bool, f64),
     (exclude, labels): (&[String], &BTreeMap<String, String>),
 ) -> Option<[(f64, f64); N]> {
+    // These callers (publication's) measure legends with no class labels of their own; a saved
+    // legend is measured through `LegendAsked`.
     let class_labels = &ClassLabels::NONE;
     let asked = LegendAsked { all_classes, hide_other, show_no_data, layer_names: true, text_size, exclude, labels, class_labels };
     sizes_asked_mm(map, scale, &asked)

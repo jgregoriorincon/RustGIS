@@ -461,8 +461,8 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   - **Class labels** (`"classLabels"`, commands and scripts only): the legend's own text for a
     class, leaving the layer, the Layers pane and every other legend as they are:
     `layout.update {"element": 3, "classLabels": {"Roads": {"Primary": "Main roads"}}}`. A class is
-    named by the label the layer shows for it, a range or `<all other values>` included, up to 200
-    characters of text. Each entry replaces that class's text; `null` or `""` shows the layer's
+    named by the label the layer shows for it, a range or `<all other values>` included; its text is
+    up to 200 characters. A text for the missing-value row shows when `"showNoData"` is on. Each entry replaces that class's text; `null` or `""` shows the layer's
     label again, a layer's `null` all of its own, and `{}` every layer's. A layer or class that
     isn't there is refused, and a layer drawn in one symbol has no classes to rename (use
     `"labels"`). The text follows a renamed layer. If the layer's label for a class changes later,

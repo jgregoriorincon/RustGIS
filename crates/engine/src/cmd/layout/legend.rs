@@ -523,7 +523,7 @@ pub(in crate::cmd::layout) fn legend_class_labels(
                     map.layers
                         .iter()
                         .filter(|l| l.name.eq_ignore_ascii_case(name))
-                        .flat_map(crate::render::layout::legend_class_labels)
+                        .flat_map(crate::render::layout::class_row_labels)
                         .collect()
                 });
                 if listed.is_empty() {

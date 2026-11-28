@@ -39,6 +39,8 @@ impl ClassLabels {
     /// one entry per layer in any case, at most [`MAX_LEGEND_LABELS`] classes in all, each text
     /// cut to [`MAX_LEGEND_LABEL_CHARS`]. Whether anything was cut.
     pub(super) fn clamp(&mut self) -> bool {
+        // Cleared, not counted here: `Layout::clamp` counts the element as adjusted because the
+        // mark differs from the copy it took before.
         self.damaged = false;
         let mut cut = false;
         let mut seen = std::collections::HashSet::new();

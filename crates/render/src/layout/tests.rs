@@ -8244,7 +8244,7 @@ fn a_legend_labels_a_layers_classes_itself() {
         text_size: 9.0,
     };
     assert_eq!(labels_of(&legend_rows(&map, None, &opts(&listed, false))), ["c0", "c1", "c99"]);
-    assert_eq!(legend_class_labels(&map.layers[0]), ["c0", "c1", "c99"]);
+    assert_eq!(class_row_labels(&map.layers[0]), ["c0", "c1", "c99"]);
     let mut own = ClassLabels::default();
     own.by_layer.insert(
         "PTS".into(),
@@ -8253,7 +8253,7 @@ fn a_legend_labels_a_layers_classes_itself() {
     assert_eq!(labels_of(&legend_rows(&map, None, &opts(&own, false))), ["First", "c1", "Elsewhere"]);
     // The fallback row is still the fallback, whatever it says.
     assert_eq!(labels_of(&legend_rows(&map, None, &opts(&own, true))), ["First", "c1"]);
-    assert_eq!(legend_class_labels(&map.layers[0]), ["c0", "c1", "c99"], "the layer keeps its own");
+    assert_eq!(class_row_labels(&map.layers[0]), ["c0", "c1", "c99"], "the layer keeps its own");
     // A longer text is measured as it is drawn.
     let mut width = |class_labels: &ClassLabels| {
         let asked = LegendAsked {
