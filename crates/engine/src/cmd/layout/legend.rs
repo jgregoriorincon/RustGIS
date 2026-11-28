@@ -453,7 +453,7 @@ pub(in crate::cmd::layout) fn with_labels(
     Ok(out)
 }
 
-/// A legend given labels for its classes on another element.
+/// The refusal for `classLabels` on an element other than a legend.
 pub(in crate::cmd::layout) const ONLY_LEGEND_CLASS_LABELS: &str = "only legends take classLabels";
 
 /// The shape a legend's `classLabels` takes.
@@ -469,8 +469,9 @@ const CLASSES_SAID: usize = 10;
 pub(in crate::cmd::layout) type GivenClassLabels = Vec<(String, Option<Vec<(String, Option<String>)>>)>;
 
 /// A legend's `classLabels` from `p` (#3187): `None` when not given; an empty list for `{}`, which
-/// shows every class's own label again. A text for a class the layer doesn't list, a layer the map
-/// hasn't or a layer named twice is an error; taking a text off isn't, whatever the layer lists now.
+/// shows every class's own label again. A text for a class the layer doesn't list or for a layer
+/// with no classes to rename, a layer the map hasn't or a layer named twice is an error; taking a
+/// text off isn't, whatever the layer lists now.
 pub(in crate::cmd::layout) fn legend_class_labels(
     input: &impl crate::cmd::InputSource,
     l: &Layout,
@@ -481,7 +482,7 @@ pub(in crate::cmd::layout) fn legend_class_labels(
     let given = v.as_object().ok_or(CLASS_LABELS_SHAPE)?;
     let too_many = || format!("a legend can label at most {MAX_LEGEND_LABELS} classes");
     if given.len() > MAX_LEGEND_LABELS {
-        return Err(too_many());
+        return Err(format!("classLabels names at most {MAX_LEGEND_LABELS} layers"));
     }
     let map = legend_map(input, l, frame)?;
     let mut room = MAX_LEGEND_LABELS;

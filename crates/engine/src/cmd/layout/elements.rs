@@ -955,6 +955,7 @@ const ADD_LEGEND_KEYS: &[&str] = &[
     "exclude",
     "columns",
     "labels",
+    "classLabels",
     "textSize",
     "fit",
     "showLayerNames",
