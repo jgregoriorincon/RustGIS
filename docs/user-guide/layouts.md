@@ -569,9 +569,11 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
   `layout.update={"element":7,"angle":-90}` to turn one.
 - **Text clipping**: the layout view and PNG, PDF and SVG exports warn when a text element or
   legend title runs off the page, or a text element has more lines than its height allows.
-  The notice counts and names the affected elements with their IDs. A line may extend beyond
-  its element's width while remaining on the page; that alone is not clipped. Reduce the size,
-  add line breaks, turn on **Wrap to the box**, or resize or move the element to keep all its text;
+  The notice counts and names the affected elements with their IDs. Exporting a report that draws
+  a layout as a page says the same of that page's texts, in a notice for each such layout that
+  names it. A line may extend beyond its element's width while remaining on the page; that alone
+  is not clipped. Reduce the size, add line breaks, turn on **Wrap to the box**, or resize or move
+  the element to keep all its text;
   when every text it names is already wrapped, the notice suggests only the size and the box, and
   a legend's title, which has no wrap, is told to add line breaks. Lines left out below a text's
   box are said as soon as they are: `layout.addElement` and `layout.update` warn how many lines
@@ -795,10 +797,11 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
 - **What a chart says**: exporting a layout (or the Assistant viewing it) says again what each chart it shows leaves out, and
   whether its box is too small for it, read as the exported page draws it, on every page of a map
   series it exports: charts with the same notice are named together in one, by name and element
-  number, the first ten and how many more there are. A box is too small when columns are left no height by their labels
-  and values (the chart shows its placeholder), or when bars, or the room they run in, come under
-  a point. The chart also says that when it is added, resized, retitled, turned, or given or
-  denied values or labels.
+  number, the first ten and how many more there are. Exporting a report that draws a layout as a
+  page says the same of that page's charts, naming each with its layout. A box is too small when
+  columns are left no height by their labels and values (the chart shows its placeholder), or when
+  bars, or the room they run in, come under a point. The chart also says that when it is added,
+  resized, retitled, turned, or given or denied values or labels.
 - **Facing charts**: two charts side by side compare two fields per category back to back, such
   as the share of businesses against the share of people in each district. **Mirror** draws a
   chart as its mirror image, its text reading as ever: bars running across start from the right
