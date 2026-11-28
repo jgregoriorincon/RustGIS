@@ -68,6 +68,7 @@ pub fn commands() -> Vec<C> {
             if let Some(cut) = cut {
                 s.notify(cut, false);
             }
+            say_pages_without_their_map(s, PagesOf::Presentation(i));
             // Pages often share a title's figure: each warning once, with its count of pages.
             let mut said: Vec<(String, usize)> = Vec::new();
             for k in 0..s.project.presentations[i].pages.len() {
@@ -631,6 +632,72 @@ fn page_map<'a>(input: &'a impl super::InputSource, name: &str) -> &'a rustgis_m
     let s = &context;
     s.project.maps.iter().find(|m| m.name.eq_ignore_ascii_case(name)).unwrap_or_else(|| s.map())
 }
+
+/// Most map names [`say_pages_without_their_map`] lists: an imported file may name one a page.
+const MISSING_MAPS_NAMED: usize = 3;
+
+/// The map pages [`say_pages_without_their_map`] looks at.
+pub(crate) enum PagesOf<'a> {
+    /// Those naming this map, in every presentation: it has just gone.
+    Map(&'a str),
+    /// Those of the presentation at this index, whatever they name: it has just come in.
+    Presentation(usize),
+}
+
+/// Says, once, how many of the map pages `which` name a map the project doesn't have, which
+/// [`page_map`] draws over the active map (#3047). The pages keep the name.
+pub(crate) fn say_pages_without_their_map(s: &mut Session, which: PagesOf<'_>) {
+    use crate::notice_text::NoticeText;
+
+    let (mut pages, mut presentations) = (0usize, Vec::new());
+    let (mut named, mut more) = (Vec::<&str>::new(), false);
+    for (i, pres) in s.project.presentations.iter().enumerate() {
+        for page in &pres.pages {
+            let PageKind::Map { map, .. } = &page.kind else { continue };
+            let looked_at = match which {
+                PagesOf::Map(gone) => map.eq_ignore_ascii_case(gone),
+                PagesOf::Presentation(k) => i == k,
+            };
+            if !looked_at || s.project.maps.iter().any(|m| m.name.eq_ignore_ascii_case(map)) {
+                continue;
+            }
+            pages += 1;
+            if presentations.last() != Some(&&pres.name) {
+                presentations.push(&pres.name);
+            }
+            if !named.iter().any(|n| n.eq_ignore_ascii_case(map)) {
+                if named.len() < MISSING_MAPS_NAMED {
+                    named.push(map);
+                } else {
+                    more = true;
+                }
+            }
+        }
+    }
+    let whose = match presentations.as_slice() {
+        [] => return,
+        [name] => NoticeText::format("Presentation '{name}'", [("name", (*name).clone().into())]),
+        several => NoticeText::format("{count} presentations", [("count", several.len().to_string().into())]),
+    };
+    let key = match (pages, named.len()) {
+        (1, _) => {
+            "{whose}: {count} map page shows {names}, which the project doesn't have, so it is drawn over the active map until a map of that name comes back"
+        }
+        (_, 1) => {
+            "{whose}: {count} map pages show {names}, which the project doesn't have, so they are drawn over the active map until a map of that name comes back"
+        }
+        _ => {
+            "{whose}: {count} map pages show {names}, which the project doesn't have, so they are drawn over the active map until maps of those names come back"
+        }
+    };
+    let mut names = named.iter().map(|n| format!("'{n}'")).collect::<Vec<_>>().join(", ");
+    if more {
+        names.push_str(", …");
+    }
+    let notice = NoticeText::format(key, [("whose", whose), ("count", pages.to_string().into()), ("names", names.into())]);
+    s.notify_text(notice, false);
+}
+
 /// Binds the map whose current view initializes the page.
 fn map_page_inputs(input: &super::InputContext<'_>, p: &Value) -> Result<super::Inputs, String> {
     let map = map_page_source(input, p)?;
