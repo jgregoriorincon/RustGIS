@@ -432,9 +432,11 @@ impl ElementKind {
         !fit.is_manual() || !show_layer_names.is_shown() || legend_columns_in_range(*columns) > LEGEND_COLUMNS_BEFORE_FIT
     }
 
-    /// Whether this is a legend with labels of its own for its layers' classes.
+    /// Whether this is a legend with a text of its own for a class: a blank one, which a load
+    /// drops, isn't one.
     pub fn legend_labels_classes(&self) -> bool {
-        matches!(self, ElementKind::Legend { class_labels, .. } if !class_labels.is_empty())
+        let ElementKind::Legend { class_labels, .. } = self else { return false };
+        class_labels.by_layer.values().flat_map(|classes| classes.values()).any(|text| !text.trim().is_empty())
     }
 
     /// Whether this is a scale bar with any of the details set: subdivisions, divisions before

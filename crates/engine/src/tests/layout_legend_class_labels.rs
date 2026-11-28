@@ -167,6 +167,17 @@ fn saved_commands_and_layout_files_with_class_labels_require_the_capability() {
         serde_json::to_value(&p).unwrap()["requires"].as_array().is_some_and(|r| r.contains(&json!("layout-legend-class-labels")))
     };
     let given = json!({"Countries": {"Africa": "a"}});
+    // A layout file whose labels come to nothing needs nothing, as the commands that give none.
+    let emptied = |classes: Value| {
+        let mut l: Value = serde_json::from_str(&layout).unwrap();
+        let elements = l["elements"].as_array_mut().unwrap();
+        let e = elements.iter_mut().find(|e| e["kind"]["Legend"].is_object()).unwrap();
+        e["kind"]["Legend"]["class_labels"] = classes;
+        json!({"text": l.to_string()})
+    };
+    for classes in [json!({"Countries": {}}), json!({"Countries": {"Africa": " "}})] {
+        assert!(!requires("layout.import", emptied(classes.clone())), "{classes}");
+    }
     for (id, params, required) in [
         ("layout.addElement", json!({"kind": "legend", "classLabels": given}), true),
         ("layout.update", json!({"element": 3, "classLabels": given}), true),

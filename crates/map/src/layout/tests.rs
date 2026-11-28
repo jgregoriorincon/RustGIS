@@ -1992,6 +1992,8 @@ fn legend_class_labels_save_only_when_set_and_load_into_range() {
         (json!({"a": {"x": " "}, "b": {}}), json!(null), 1, 0),
         (json!({"A": {"x": "X"}, "a": {"y": "Y"}}), json!({"A": {"x": "X"}}), 1, 1),
         (json!({"a": {"x": long}}), json!({"a": {"x": "x".repeat(MAX_LEGEND_LABEL_CHARS)}}), 1, 1),
+        // A text blank once cut is no text: the layer's own label shows.
+        (json!({"a": {"x": format!("{}X", " ".repeat(MAX_LEGEND_LABEL_CHARS))}}), json!(null), 1, 1),
     ];
     let load = |given: &serde_json::Value| {
         let frame = json!({"id": 1, "name": "f", "x": 0, "y": 0, "w": 100, "h": 100,

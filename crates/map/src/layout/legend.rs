@@ -46,7 +46,13 @@ impl ClassLabels {
         let mut seen = std::collections::HashSet::new();
         let mut room = MAX_LEGEND_LABELS;
         self.by_layer.retain(|name, classes| {
-            classes.retain(|_, text| !text.trim().is_empty());
+            // Cut first: a text can be blank only once cut.
+            classes.retain(|_, text| {
+                let end = text.char_indices().nth(MAX_LEGEND_LABEL_CHARS).map_or(text.len(), |(i, _)| i);
+                cut |= end < text.len();
+                text.truncate(end);
+                !text.trim().is_empty()
+            });
             if classes.is_empty() {
                 return false;
             }
@@ -59,11 +65,6 @@ impl ClassLabels {
                 cut = true;
             }
             room -= classes.len();
-            for text in classes.values_mut() {
-                let end = text.char_indices().nth(MAX_LEGEND_LABEL_CHARS).map_or(text.len(), |(i, _)| i);
-                cut |= end < text.len();
-                text.truncate(end);
-            }
             true
         });
         cut

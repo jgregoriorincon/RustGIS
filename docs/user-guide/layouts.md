@@ -467,7 +467,8 @@ Layouts open as tabs next to the maps; while one is open, its groups lead the Pu
     layer's `null` all of its own, and `{}` every layer's. A layer or class that isn't there is
     refused, and a layer drawn in one symbol has no classes to rename (use `"labels"`). The text
     follows a renamed layer. If the layer's label for a class changes later, the legend shows the
-    new one. A project or layout file with such a legend can't be opened by an older RustGIS.
+    new one. A project or layout file with such a legend lists it in its `requires`, so a RustGIS
+    that checks that list and doesn't know the capability refuses to open it.
   - **Text size** (`"textSize"`, 4 to 100 points, 9 by default; a size outside that range is
     refused): the size of its layers' names and classes' labels. Its title, rows, indents and the
     gap between columns follow in proportion, and so do a web layer's legend pictures and the length

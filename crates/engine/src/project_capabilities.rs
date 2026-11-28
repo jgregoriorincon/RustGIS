@@ -447,7 +447,7 @@ fn command_uses_legend_class_labels(id: &str, params: &Value) -> bool {
     }
 }
 
-/// Whether a layout element is a legend with its own text for a class, once brought into range.
+/// Whether a layout element is a legend with its own text for a class.
 fn legend_labels_classes(e: &rustgis_map::layout::Element) -> bool {
     e.kind.legend_labels_classes()
 }
